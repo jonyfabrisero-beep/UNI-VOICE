@@ -2,43 +2,101 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { AssistantState, ChatMessage, VoiceSettings, KnowledgeDocument } from '../types';
 import { DEFAULT_KNOWLEDGE_DOC } from '../data/defaultKnowledge';
 
-// Fallback matching in case server is booting or offline
+// Fallback matching with semantic NLP intent interpretation (Latin American Spanish)
 function matchLocalKnowledge(query: string, content: string): string {
-  const q = query.toLowerCase();
-  
-  if (q.includes('hamburguesa') || q.includes('master burguer') || q.includes('doppio') || q.includes('monster') || q.includes('promo')) {
-    return "En Pollos Gran Combo tienen las promociones del Master Burguer 2026 con dos opciones: la Doppio Cheese en versión estándar por 6.99 dólares, y la Monster Cheese en versión premium por 9.99 dólares.";
-  }
-  
-  if (q.includes('ingrediente') && (q.includes('doppio') || q.includes('standard') || q.includes('estandar'))) {
-    return "La hamburguesa Doppio Cheese lleva pan brioche coronado con queso parmesano, pollo crispy, queso Kraft, tocineta, cebolla caramelizada y salsa de ajo parmesano.";
+  const q = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  // 1. Food, hunger, meal, burger, chicken, combos, cravings
+  const foodKeywords = [
+    'hambre', 'comer', 'comida', 'almorzar', 'almuerzo', 'cenar', 'cena', 'plato', 'picar', 'antojo',
+    'hamburguesa', 'burger', 'burguer', 'doppio', 'monster', 'pollo', 'crispy', 'combo', 'arepitas',
+    'papas', 'papitas', 'refresco', 'carne', 'rapida', 'restaurante', 'menu', 'sabroso', 'rico'
+  ];
+  const hasFoodIntent = foodKeywords.some(kw => q.includes(kw));
+
+  // 2. Ingredients, contents, recipe, cheese, bacon, bread
+  const ingredientKeywords = [
+    'ingrediente', 'lleva', 'trae', 'contiene', 'prepara', 'receta', 'queso', 'tocineta', 'pan',
+    'salsa', 'cebolla', 'lechuga', 'gouda', 'kraft', 'parmesano', 'pretzel', 'brioche', 'mayo', 'ranch'
+  ];
+  const hasIngredientIntent = ingredientKeywords.some(kw => q.includes(kw));
+
+  // 3. Price, cost, promos, cheap, expensive
+  const priceKeywords = [
+    'precio', 'costo', 'cuesta', 'vale', 'cuanto', 'promo', 'promocion', 'promociones', 'oferta',
+    'descuento', 'barato', 'economico', 'combo'
+  ];
+  const hasPriceIntent = priceKeywords.some(kw => q.includes(kw));
+
+  // 4. Beauty, salon, aesthetics, cosmetics, hair, nails, skincare
+  const beautyKeywords = [
+    'belleza', 'maquillaje', 'cosmetico', 'cosmetica', 'peinado', 'cabello', 'pelo', 'unas',
+    'estetica', 'salon', 'peluqueria', 'spa', 'skincare', 'piel', 'coreano', 'k-beauty', 'hallyu',
+    'glossy', 'mia', 'studio 1118', 'vijones', 'mujer', 'arreglarme', 'ponerme linda', 'linda', 'guapa'
+  ];
+  const hasBeautyIntent = beautyKeywords.some(kw => q.includes(kw));
+
+  // 5. Schedule, hours, open, close, time
+  const scheduleKeywords = [
+    'horario', 'hora', 'abierto', 'abren', 'cierran', 'atienden', 'tiempo', 'tarde', 'noche', 'domingo', 'hoy'
+  ];
+  const hasScheduleIntent = scheduleKeywords.some(kw => q.includes(kw));
+
+  // 6. Location, where is it, directions, floor
+  const locationKeywords = [
+    'ubicacion', 'donde', 'queda', 'llegar', 'piso', 'bulevar', 'entrada', 'sitio', 'direccion', 'local'
+  ];
+  const hasLocationIntent = locationKeywords.some(kw => q.includes(kw));
+
+  // 7. Delivery, phone, contact, whatsapp, order
+  const contactKeywords = [
+    'whatsapp', 'telefono', 'numero', 'contacto', 'pedir', 'pedido', 'delivery', 'domicilio', 'llamar', 'envio'
+  ];
+  const hasContactIntent = contactKeywords.some(kw => q.includes(kw));
+
+  // 8. Greetings
+  const greetingKeywords = ['hola', 'buenos dias', 'buenas tardes', 'buenas noches', 'que tal', 'quien eres', 'ayuda'];
+  const hasGreetingIntent = greetingKeywords.some(kw => q.includes(kw));
+
+  if (hasIngredientIntent) {
+    if (q.includes('monster') || q.includes('premium') || q.includes('pretzel') || q.includes('gouda')) {
+      return "La Monster Cheese de Pollos Gran Combo lleva pan pretzel, pollo crispy, queso gouda holandés, mermelada de tocineta, tira de tocineta extra, lechuga fresca y salsa mayo ranch.";
+    }
+    if (q.includes('doppio') || q.includes('kraft') || q.includes('brioche') || q.includes('estandar') || q.includes('standard')) {
+      return "La Doppio Cheese lleva pan brioche coronado con queso parmesano, pollo crispy, queso Kraft, tocineta crujiente, cebolla caramelizada y salsa de ajo parmesano.";
+    }
+    return "En Pollos Gran Combo tienes la Doppio Cheese con queso Kraft, tocineta y cebolla caramelizada, o la Monster Cheese con queso gouda holandés, mermelada de tocineta y pan pretzel.";
   }
 
-  if (q.includes('ingrediente') && (q.includes('monster') || q.includes('premium'))) {
-    return "La hamburguesa Monster Cheese lleva pan pretzel, pollo crispy, queso gouda holandés, mermelada de tocineta, tira de tocineta extra, lechuga y salsa mayo ranch.";
+  if (hasPriceIntent) {
+    return "En Pollos Gran Combo tienes la hamburguesa Doppio Cheese por $6.99, la Monster Cheese por $9.99 y el combo familiar Mega Sonrisa con 6 piezas de pollo, arepitas y papitas por $19.99.";
   }
 
-  if (q.includes('horario') || q.includes('hora') || q.includes('abierto') || q.includes('abren')) {
-    return "El horario de Pollos Gran Combo es de 10 de la mañana a 10 de la noche, todos los días.";
+  if (hasBeautyIntent) {
+    return "Para belleza y cuidado personal tienes excelentes opciones: Hallyu K-Beauty con cosmética coreana, Glossy Beauty Studio, MÏA Cosmetics, Studio 1118 y Vijones Beauty Bar para uñas y estilismo.";
   }
 
-  if (q.includes('ubicacion') || q.includes('ubicación') || q.includes('donde') || q.includes('dónde') || q.includes('queda')) {
-    return "Pollos Gran Combo está ubicado en el bulevar, cerca de la entrada al área climatizada.";
+  if (hasContactIntent) {
+    return "Puedes hacer tus pedidos o solicitar delivery directamente por WhatsApp al número +58 424 306 5534.";
   }
 
-  if (q.includes('whatsapp') || q.includes('telefono') || q.includes('teléfono') || q.includes('numero') || q.includes('número') || q.includes('contacto') || q.includes('pedir')) {
-    return "Puedes hacer tus pedidos por WhatsApp al número +58 424 306 5534.";
+  if (hasScheduleIntent) {
+    return "Pollos Gran Combo está abierto todos los días de 10:00 de la mañana a 10:00 de la noche.";
   }
 
-  if (q.includes('pollo') || q.includes('mega sonrisa') || q.includes('combo') || q.includes('familiar')) {
-    return "Tienen combos desde individuales hasta familiares. Por ejemplo, el Mega Sonrisa cuesta 19.99 dólares e incluye 6 piezas de pollo, 2 raciones de arepitas, 2 raciones de papitas y 1 refresco de 1 litro.";
+  if (hasLocationIntent) {
+    return "Pollos Gran Combo se encuentra ubicado en el bulevar del centro comercial, justo al lado de la entrada al área climatizada.";
   }
 
-  if (q.includes('belleza') || q.includes('tienda') || q.includes('peluqueria') || q.includes('estetica') || q.includes('cosmetics')) {
-    return "Las tiendas de belleza disponibles son: Hallyu K-Beauty, Glossy Beauty Studio, MÏA Cosmetics, Studio 1118 y Vijones Beauty Bar.";
+  if (hasFoodIntent) {
+    return "Si buscas algo delicioso para comer, en Pollos Gran Combo te sugiero probar las hamburguesas Master Burguer: la Doppio Cheese por $6.99 o la Monster Cheese por $9.99, además de sus combos de pollo crispy.";
   }
 
-  return "Según el documento de tiendas, Pollos Gran Combo ofrece las hamburguesas Master Burguer 2026, combos de pollo como el Mega Sonrisa, y también se encuentran disponibles tiendas de belleza como Hallyu K-Beauty y Glossy Beauty Studio. ¿En qué te puedo ayudar específicamente?";
+  if (hasGreetingIntent) {
+    return "¡Hola! Con mucho gusto te ayudo. En el centro comercial te puedo informar sobre Pollos Gran Combo (hamburguesas, combos y pedidos) o sobre nuestras tiendas de belleza. ¿Qué te gustaría saber?";
+  }
+
+  return "Te puedo ayudar con información de Pollos Gran Combo, como sus hamburguesas Doppio y Monster Cheese, combos familiares, horarios, ubicación y WhatsApp, o también sobre nuestras tiendas de belleza disponibles. ¿Cuál te interesa?";
 }
 
 export function useVoiceAssistant() {
@@ -80,56 +138,73 @@ export function useVoiceAssistant() {
   const isSpeechRecognitionSupported = typeof window !== 'undefined' && 
     ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
 
-  // Helper to score and select the highest quality natural Spanish voice
+  // Helper to score and select the highest quality natural Latin American Spanish voice
   const findBestSpanishVoice = (voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined => {
-    const spanishVoices = voices.filter((v) => v.lang.startsWith('es') || v.lang.includes('ES') || v.lang.includes('MX'));
-    if (spanishVoices.length === 0) return voices.find((v) => v.lang.startsWith('es')) || voices[0];
+    if (!voices || voices.length === 0) return undefined;
+
+    const spanishVoices = voices.filter((v) => 
+      v.lang.toLowerCase().startsWith('es') || 
+      v.lang.toLowerCase().includes('419') || 
+      v.lang.toLowerCase().includes('mx') ||
+      v.lang.toLowerCase().includes('us') ||
+      v.lang.toLowerCase().includes('co') ||
+      v.lang.toLowerCase().includes('ve') ||
+      v.lang.toLowerCase().includes('ar') ||
+      v.lang.toLowerCase().includes('cl')
+    );
+
+    const targetList = spanishVoices.length > 0 ? spanishVoices : voices;
 
     const scoreVoice = (v: SpeechSynthesisVoice): number => {
       let score = 0;
       const name = v.name.toLowerCase();
       const lang = v.lang.toLowerCase();
 
-      // Highest priority: Modern Natural / Neural / Online voices
+      // Top priority 1: Latin American Spanish regions
+      if (lang.includes('419') || lang.includes('mx') || lang.includes('us') || lang.includes('co') || lang.includes('ve') || lang.includes('ar') || lang.includes('cl') || lang.includes('pe')) {
+        score += 150;
+      }
+
+      // Top priority 2: Modern Natural / Neural / Online voices
       if (name.includes('natural') || name.includes('online')) score += 120;
-      if (name.includes('neural')) score += 100;
+      if (name.includes('neural')) score += 110;
       if (name.includes('enhanced') || name.includes('premium')) score += 90;
       if (name.includes('google')) score += 80;
-      if (name.includes('microsoft')) score += 70;
-      if (name.includes('apple') || name.includes('siri')) score += 65;
+      if (name.includes('microsoft')) score += 75;
+      if (name.includes('apple') || name.includes('siri')) score += 70;
 
-      // Well-known natural human-modeled voice names
+      // Well-known natural human-modeled Latin voices
       if (
-        name.includes('jorge') ||
         name.includes('dalia') ||
+        name.includes('sabina') ||
         name.includes('salome') ||
+        name.includes('jorge') ||
+        name.includes('gonzalo') ||
         name.includes('paulina') ||
-        name.includes('monica') ||
-        name.includes('helena') ||
-        name.includes('lucia') ||
+        name.includes('diego') ||
+        name.includes('luciana') ||
         name.includes('sofia') ||
         name.includes('mia') ||
-        name.includes('diego') ||
         name.includes('alvaro') ||
         name.includes('carlos')
       ) {
-        score += 45;
+        score += 60;
       }
 
-      // Penalize legacy robotic desktop synthesizers
+      // Penalize legacy robotic desktop synthesizers & non-Latin voices if Latin is available
       if (name.includes('desktop') || name.includes('espeak') || name.includes('compact') || name.includes('synthesizer')) {
-        score -= 40;
+        score -= 50;
       }
 
-      // Prefer standard regions
-      if (lang === 'es-mx' || lang === 'es-us' || lang === 'es-es' || lang === 'es-419') {
-        score += 20;
+      // Lower priority for Spain accent if user asked for Latin American Spanish
+      if (lang === 'es-es') {
+        score -= 20;
       }
 
       return score;
     };
 
-    const sorted = [...spanishVoices].sort((a, b) => scoreVoice(b) - scoreVoice(a));
+    const sorted = [...targetList].sort((a, b) => scoreVoice(b) - scoreVoice(a));
     return sorted[0];
   };
 
@@ -262,7 +337,7 @@ export function useVoiceAssistant() {
       utterance.voice = selectedVoice;
       utterance.lang = selectedVoice.lang;
     } else {
-      utterance.lang = 'es-ES';
+      utterance.lang = 'es-419';
     }
 
     utterance.rate = voiceSettings.rate || 0.98;
@@ -467,8 +542,10 @@ export function useVoiceAssistant() {
       const recognition = new SpeechRec();
       recognitionRef.current = recognition;
 
-      recognition.lang = 'es-ES';
-      recognition.continuous = false;
+      // Configure Speech Recognition for Latin American Spanish
+      const userBrowserLang = typeof navigator !== 'undefined' ? navigator.language : 'es-419';
+      recognition.lang = userBrowserLang.startsWith('es') ? userBrowserLang : 'es-419';
+      recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
 
@@ -482,46 +559,32 @@ export function useVoiceAssistant() {
       };
 
       recognition.onresult = (event: any) => {
-        let interim = '';
-        let final = '';
+        let fullTranscript = '';
 
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            final += event.results[i][0].transcript;
-          } else {
-            interim += event.results[i][0].transcript;
-          }
+        for (let i = 0; i < event.results.length; ++i) {
+          fullTranscript += event.results[i][0].transcript + ' ';
         }
 
-        const currentText = (final || interim).trim();
+        const currentText = fullTranscript.trim();
         if (currentText) {
           latestTranscriptRef.current = currentText;
           setLiveTranscript(currentText);
 
-          // Reset silence debounce timer (1.4s of quiet after speaking auto-submits)
+          // Reset silence debounce timer (1.2s of quiet after speaking auto-submits)
           if (silenceTimeoutRef.current) {
             clearTimeout(silenceTimeoutRef.current);
           }
           silenceTimeoutRef.current = setTimeout(() => {
             if (isRecognizingRef.current && latestTranscriptRef.current.trim()) {
+              const textToSend = latestTranscriptRef.current.trim();
               if (recognitionRef.current) {
                 try { recognitionRef.current.stop(); } catch (e) {}
               }
               isRecognizingRef.current = false;
               stopAudioCapture();
-              processQueryRef.current(latestTranscriptRef.current.trim());
+              processQueryRef.current(textToSend);
             }
-          }, 1400);
-        }
-
-        if (final && final.trim().length > 0) {
-          if (silenceTimeoutRef.current) {
-            clearTimeout(silenceTimeoutRef.current);
-            silenceTimeoutRef.current = null;
-          }
-          isRecognizingRef.current = false;
-          stopAudioCapture();
-          processQueryRef.current(final.trim());
+          }, 1200);
         }
       };
 
@@ -538,16 +601,21 @@ export function useVoiceAssistant() {
           setErrorMessage('Permiso de micrófono denegado. Permite el acceso para hablar.');
           setState('error');
         } else if (event.error === 'no-speech') {
-          // If no speech was detected, gracefully return to idle
+          // If no speech was detected yet, don't crash, keep listening or gracefully stop
           if (!latestTranscriptRef.current.trim()) {
             isRecognizingRef.current = false;
             stopAudioCapture();
             setState('idle');
           }
         } else {
+          const textToSubmit = latestTranscriptRef.current.trim();
           isRecognizingRef.current = false;
           stopAudioCapture();
-          setState('idle');
+          if (textToSubmit) {
+            processQueryRef.current(textToSubmit);
+          } else {
+            setState('idle');
+          }
         }
       };
 

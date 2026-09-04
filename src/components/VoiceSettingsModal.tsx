@@ -21,8 +21,17 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  // Prioritize Spanish voices
-  const spanishVoices = availableVoices.filter((v) => v.lang.startsWith('es'));
+  // Prioritize Latin American Spanish voices
+  const latinKeywords = ['419', 'mx', 'us', 'co', 've', 'ar', 'cl', 'pe', 'dalia', 'sabina', 'salome', 'jorge', 'gonzalo', 'paulina', 'diego', 'luciana'];
+  
+  const spanishVoices = [...availableVoices.filter((v) => v.lang.toLowerCase().startsWith('es') || v.lang.includes('419'))].sort((a, b) => {
+    const aIsLatin = latinKeywords.some(k => a.lang.toLowerCase().includes(k) || a.name.toLowerCase().includes(k));
+    const bIsLatin = latinKeywords.some(k => b.lang.toLowerCase().includes(k) || b.name.toLowerCase().includes(k));
+    if (aIsLatin && !bIsLatin) return -1;
+    if (!aIsLatin && bIsLatin) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
   const displayVoices = spanishVoices.length > 0 ? spanishVoices : availableVoices;
 
   return (
