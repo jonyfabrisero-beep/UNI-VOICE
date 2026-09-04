@@ -35,37 +35,38 @@ app.get("/api/health", (req, res) => {
     features: {
       webSynchronizer: true,
       searchGrounding: true,
-      directoryCount: 20
+      exclusiveUnicentroPrompt: true,
+      strictFallbackAntiRepetition: true,
     }
   });
 });
 
-// Dynamic Knowledge & Intent Interpreter (Universal Fallback & semantic analysis)
-function extractKnowledgeAnswer(query: string, documentText: string): { reply: string; sourceType: 'directory' | 'grounding' | 'pdf' } {
+// Robust fallback engine in server
+function extractKnowledgeAnswer(query: string, documentText: string, previousReplies: string[] = []): { reply: string; sourceType: 'directory' | 'grounding' | 'pdf' } {
   const q = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
   // 1. Food and restaurants in Unicentro
   if (q.includes('pizza') || q.includes('beato') || q.includes('demaciao')) {
     return {
-      reply: "En Unicentro Maracay tienes Beato Napoletano con pizzas a la leña en el bulevar gastronómico, y Demaciao Pizza para pizzas rápidas familiares.",
+      reply: "En Unicentro Maracay tienes Beato Napoletano con pizzas a la leña en el bulevar gastronómico, y Demaciao Pizza para pizzas rápidas familiares. ¿Deseas que te indique en qué área se encuentran?",
       sourceType: 'directory'
     };
   }
   if (q.includes('sushi') || q.includes('cebiche') || q.includes('ceviche') || q.includes('japones') || q.includes('asiatic')) {
     return {
-      reply: "Para comida japonesa y fusión peruana cuentas con Sushi & Cebiches en el bulevar, y Orbe Exotic Food con cócteles y comida asiática gourmet.",
+      reply: "Para comida japonesa y fusión peruana cuentas con Sushi & Cebiches en el bulevar, y Orbe Exotic Food con cócteles y comida asiática gourmet. ¿Te gustaría saber si cuentan con delivery?",
       sourceType: 'directory'
     };
   }
   if (q.includes('cafe') || q.includes('helado') || q.includes('gelato') || q.includes('postre') || q.includes('torta') || q.includes('merienda')) {
     return {
-      reply: "Para café y postres tienes Ventus Café & Bistro con cafés y frappes, o Biella Gelato con helados artesanales italianos en el bulevar.",
+      reply: "Para café y postres tienes Ventus Café & Bistro con frappes y pastelería, o Biella Gelato con auténticos helados artesanales italianos en el bulevar. ¿Buscas merendar un café o un helado?",
       sourceType: 'directory'
     };
   }
   if (q.includes('arabe') || q.includes('shawarma') || q.includes('falafel') || q.includes('lubnan')) {
     return {
-      reply: "Para comida árabe tradicional tienes Lubnan Shawarmas en el bulevar gastronómico, con shawarmas de pollo o carne, falafel y cremas.",
+      reply: "Para comida árabe tradicional tienes Lubnan Shawarmas en el bulevar gastronómico, con shawarmas de pollo, carne y falafel. ¿Te gustaría saber su horario de atención?",
       sourceType: 'directory'
     };
   }
@@ -75,18 +76,18 @@ function extractKnowledgeAnswer(query: string, documentText: string): { reply: s
   if (ingredientKeywords.some(kw => q.includes(kw))) {
     if (q.includes('monster') || q.includes('premium') || q.includes('pretzel') || q.includes('gouda')) {
       return {
-        reply: "La Monster Cheese de Pollos Gran Combo incluye pan pretzel, pollo crispy, queso gouda holandés, mermelada de tocineta, tira de tocineta extra, lechuga y salsa mayo ranch.",
+        reply: "La Monster Cheese de Pollos Gran Combo incluye pan pretzel, pollo crispy, queso gouda holandés, mermelada de tocineta, lechuga y salsa mayo ranch por $9.99. ¿Deseas su número de WhatsApp para pedirla?",
         sourceType: 'pdf'
       };
     }
     if (q.includes('doppio') || q.includes('kraft') || q.includes('brioche') || q.includes('estandar') || q.includes('standard')) {
       return {
-        reply: "La Doppio Cheese está preparada con pan brioche con queso parmesano, pollo crispy, queso Kraft, tocineta crujiente, cebolla caramelizada y salsa de ajo parmesano.",
+        reply: "La Doppio Cheese está preparada con pan brioche con queso parmesano, pollo crispy, queso Kraft, tocineta crujiente, cebolla caramelizada y salsa de ajo parmesano por $6.99. ¿Te gustaría ordenar delivery?",
         sourceType: 'pdf'
       };
     }
     return {
-      reply: "En Pollos Gran Combo tienes dos deliciosas opciones: la Doppio Cheese con queso Kraft y cebolla caramelizada ($6.99), o la Monster Cheese con queso gouda holandés y mermelada de tocineta en pan pretzel ($9.99).",
+      reply: "En Pollos Gran Combo tienes la Doppio Cheese con queso Kraft ($6.99) y la Monster Cheese con queso gouda en pan pretzel ($9.99). ¿Prefieres sabores clásicos o una opción gourmet con pan pretzel?",
       sourceType: 'pdf'
     };
   }
@@ -94,85 +95,79 @@ function extractKnowledgeAnswer(query: string, documentText: string): { reply: s
   // 3. Price & Promotions
   const priceKeywords = ['precio', 'costo', 'cuesta', 'vale', 'cuanto', 'promo', 'promocion', 'promociones', 'oferta', 'descuento', 'barato', 'economico', 'combo', 'dolar'];
   if (priceKeywords.some(kw => q.includes(kw))) {
-    if (q.includes('barat') || q.includes('econom')) {
-      return {
-        reply: "La opción más económica de hamburguesa es la Doppio Cheese por 6 dólares con 99 centavos, o puedes optar por la Monster Cheese por 9 dólares con 99 centavos.",
-        sourceType: 'pdf'
-      };
-    }
     return {
-      reply: "En Pollos Gran Combo tienes la hamburguesa Doppio Cheese por $6.99, la Monster Cheese por $9.99 y el combo familiar Mega Sonrisa con 6 piezas de pollo, arepitas y papitas por $19.99.",
+      reply: "En Pollos Gran Combo tienes la hamburguesa Doppio Cheese por $6.99, la Monster Cheese por $9.99 y el combo familiar Mega Sonrisa con 6 piezas de pollo por $19.99. ¿Buscas un menú individual o para compartir en familia?",
       sourceType: 'pdf'
     };
   }
 
-  // 4. Beauty and Aesthetics
-  const beautyKeywords = ['belleza', 'maquillaje', 'cosmetico', 'cosmetica', 'peinado', 'cabello', 'pelo', 'unas', 'estetica', 'salon', 'peluqueria', 'spa', 'skincare', 'piel', 'k-beauty', 'hallyu', 'glossy', 'mia', 'studio 1118', 'vijones'];
-  if (beautyKeywords.some(kw => q.includes(kw))) {
+  // 4. Generic food inquiry -> INQUIRE TO REFINE
+  const foodKeywords = ['hambre', 'comer', 'comida', 'almorzar', 'almuerzo', 'cenar', 'cena', 'restaurante', 'menu', 'sabroso', 'antojo'];
+  if (foodKeywords.some(kw => q.includes(kw))) {
     return {
-      reply: "En Unicentro Maracay contamos con varias tiendas de belleza: Hallyu K-Beauty para cosmética coreana, Glossy Beauty Studio, MÏA Cosmetics, Studio 1118 y Vijones Beauty Bar para uñas y estilismo.",
+      reply: "En nuestro bulevar gastronómico tenemos pollo crispy y hamburguesas en Pollos Gran Combo, pizzas a la leña en Beato Napoletano, sushi en Sushi & Cebiches o smash burgers en Zeta Burger. ¿Qué tipo de comida te apetece hoy: algo rápido o comida para sentarse?",
       sourceType: 'directory'
     };
   }
 
-  // 5. Supermarket, Pharmacy, Services
+  // 5. Beauty and Aesthetics
+  const beautyKeywords = ['belleza', 'maquillaje', 'cosmetico', 'cosmetica', 'peinado', 'cabello', 'pelo', 'unas', 'estetica', 'salon', 'peluqueria', 'spa', 'skincare', 'piel', 'k-beauty', 'hallyu', 'glossy', 'mia', 'studio 1118', 'vijones'];
+  if (beautyKeywords.some(kw => q.includes(kw))) {
+    return {
+      reply: "En Unicentro Maracay contamos con Hallyu K-Beauty para skincare coreano, Glossy Beauty Studio para balayage y pestañas, MÏA Cosmetics y Vijones Beauty Bar para uñas. ¿Qué servicio o producto de belleza estás buscando?",
+      sourceType: 'directory'
+    };
+  }
+
+  // 6. Supermarket, Pharmacy, Services
   if (q.includes('farmacia') || q.includes('farmatodo') || q.includes('medicina') || q.includes('salud')) {
     return {
-      reply: "Unicentro Maracay cuenta con Farmatodo en planta baja con atención para medicinas, conveniencia y cuidado personal.",
+      reply: "Unicentro Maracay cuenta con Farmatodo en planta baja con atención para medicamentos y conveniencia. ¿Deseas saber si cuenta con acceso vehicular directo?",
       sourceType: 'directory'
     };
   }
   if (q.includes('supermercado') || q.includes('forum') || q.includes('mercado') || q.includes('viveres') || q.includes('compras')) {
     return {
-      reply: "Cuentas con Forum Súper Mayorista en el centro comercial para compras completas de alimentos, víveres y productos para el hogar.",
+      reply: "Cuentas con Forum Súper Mayorista en el centro comercial para compras completas de alimentos y víveres al mayor y detal. ¿Buscas compras rápidas o mercado general?",
       sourceType: 'directory'
     };
   }
   if (q.includes('viaje') || q.includes('boleto') || q.includes('vuelo') || q.includes('viajea')) {
     return {
-      reply: "En el nivel de servicios tienes la agencia Viajea para boletos nacionales e internacionales, paquetes de turismo y reservas.",
+      reply: "En el nivel de servicios del piso 1 tienes la agencia Viajea para boletos nacionales e internacionales y paquetes de turismo. ¿Deseas planificar un viaje nacional o internacional?",
       sourceType: 'directory'
     };
   }
   if (q.includes('digitel') || q.includes('telefono') || q.includes('linea') || q.includes('chip') || q.includes('esim')) {
     return {
-      reply: "En planta baja tienes el centro de atención Digitel para trámites móviles, planes 4G y recargas.",
+      reply: "En planta baja tienes el centro de atención Digitel para trámites móviles, planes 4G y recargas. ¿Deseas conocer su horario de atención?",
       sourceType: 'directory'
     };
   }
 
-  // 6. Contact, WhatsApp & Delivery
+  // 7. Contact, WhatsApp & Delivery
   const contactKeywords = ['whatsapp', 'telefono', 'numero', 'contacto', 'pedir', 'pedido', 'delivery', 'domicilio', 'llamar'];
   if (contactKeywords.some(kw => q.includes(kw))) {
     return {
-      reply: "Para realizar tus pedidos o consultar por delivery de Pollos Gran Combo, puedes escribir directamente al WhatsApp al +58 424 306 5534.",
+      reply: "Para realizar tus pedidos o consultar por delivery de Pollos Gran Combo, puedes escribir directamente a su WhatsApp al +58 424 306 5534. ¿Deseas el contacto de algún otro restaurante?",
       sourceType: 'pdf'
     };
   }
 
-  // 7. Hours & Schedule
+  // 8. Hours & Schedule
   const scheduleKeywords = ['horario', 'hora', 'abierto', 'abren', 'cierran', 'atienden'];
   if (scheduleKeywords.some(kw => q.includes(kw))) {
     return {
-      reply: "Unicentro Maracay abre de lunes a domingo de 10:00 AM a 8:00 PM, y los locales del bulevar gastronómico atienden hasta las 10:00 o 11:00 PM.",
+      reply: "Unicentro Maracay abre de lunes a domingo de 10:00 AM a 8:00 PM, y los locales del bulevar atienden hasta las 10:00 o 11:00 de la noche. ¿Planeas visitarnos en la tarde o para cenar?",
       sourceType: 'directory'
     };
   }
 
-  // 8. Location
+  // 9. Location
   const locationKeywords = ['ubicacion', 'donde', 'queda', 'llegar', 'piso', 'bulevar', 'direccion', 'casanova'];
   if (locationKeywords.some(kw => q.includes(kw))) {
     return {
-      reply: "Unicentro Maracay se ubica en la Avenida José Casanova Godoy. Pollos Gran Combo está en el bulevar al lado de la entrada al área climatizada.",
-      sourceType: 'directory'
-    };
-  }
-
-  // 9. General food inquiry
-  const foodKeywords = ['hambre', 'comer', 'comida', 'almorzar', 'almuerzo', 'cenar', 'cena', 'restaurante', 'menu', 'sabroso'];
-  if (foodKeywords.some(kw => q.includes(kw))) {
-    return {
-      reply: "En el bulevar gastronómico tienes deliciosas opciones: Pollos Gran Combo con pollo crispy y hamburguesas, Beato Napoletano con pizzas, Sushi & Cebiches o Zeta Burger.",
+      reply: "Unicentro Maracay se ubica en la Avenida José Casanova Godoy, con bulevar gastronómico al aire libre y área climatizada de 2 pisos. ¿Vienes en vehículo propio o transporte público?",
       sourceType: 'directory'
     };
   }
@@ -181,13 +176,14 @@ function extractKnowledgeAnswer(query: string, documentText: string): { reply: s
   const greetingKeywords = ['hola', 'buenos dias', 'buenas tardes', 'buenas noches', 'que tal', 'quien eres', 'ayuda'];
   if (greetingKeywords.some(kw => q.includes(kw))) {
     return {
-      reply: "¡Hola! Bienvenido a Unicentro Maracay. Te puedo orientar sobre tiendas, bulevar gastronómico, belleza, servicios y promociones. ¿Qué deseas consultar?",
+      reply: "¡Hola! Bienvenido a Unicentro Maracay. Te puedo orientar sobre tiendas, bulevar gastronómico, belleza, servicios y promociones. ¿Qué te gustaría consultar hoy?",
       sourceType: 'directory'
     };
   }
 
+  // 11. STRICT FALLBACK WHEN NOT FOUND (Anti-repetition requirement)
   return {
-    reply: "Te puedo brindar información sobre tiendas, restaurantes del bulevar gastronómico, horarios de Unicentro Maracay y las promociones de Pollos Gran Combo. ¿En qué te puedo asesorar?",
+    reply: "No encontré esa información específica en nuestro directorio de Unicentro Maracay. ¿Te gustaría que te recomiende tiendas similares o que indaguemos en las opciones de nuestro bulevar gastronómico?",
     sourceType: 'directory'
   };
 }
@@ -210,7 +206,7 @@ function shouldTriggerSearchGrounding(query: string): boolean {
 // Chat & Knowledge Q&A API
 app.post("/api/chat", async (req, res) => {
   try {
-    const { message, documentContext, history } = req.body;
+    const { message, systemPrompt, documentContext, history } = req.body;
 
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: "Parámetro 'message' es requerido." });
@@ -219,33 +215,28 @@ app.post("/api/chat", async (req, res) => {
     const ai = getAIClient();
 
     // If Gemini client is available, execute hybrid knowledge resolution:
-    // Synchronizer (Stores, Menus, Floors) + Google Search Grounding (Live events, news, dynamic queries)
     if (ai) {
       const needsSearchGrounding = shouldTriggerSearchGrounding(message);
       
-      const systemInstruction = `Eres "Uni Voice", el asistente conversacional por voz oficial e inteligente de Unicentro Maracay (ubicado en Av. José Casanova Godoy, Maracay, Venezuela).
-Tu tono es cálido, empático, profesional y en ESPAÑOL LATINOAMERICANO fluido.
+      const robustSystemPrompt = `${systemPrompt || ''}
 
-BASE DE CONOCIMIENTO SINCRONIZADA (DIRECTORIO OFICIAL, TIENDAS, MENÚS Y PISOS FIJOS):
+DIRECTORIO Y BASE CONOCIMIENTO SINCRONIZADA (UNICENTRO MARACAY Y OFICIAL unicentromaracay.com):
 """
-${documentContext || 'Directorio comercial y gastronómico de Unicentro Maracay y Pollos Gran Combo'}
+${documentContext || 'Directorio comercial de Unicentro Maracay y Pollos Gran Combo'}
 """
 
-ESTRATEGIA HÍBRIDA DE CONOCIMIENTO:
-1. SINCRONIZADOR WEB Y BASE FIJA:
-   - Utiliza la base de conocimiento sincronizada arriba para responder de inmediato sobre tiendas, restaurantes del bulevar (Pollos Gran Combo, Beato Napoletano, Sushi & Cebiches, Ventus, Biella Gelato, etc.), cosmética (Hallyu K-Beauty, Glossy, etc.), supermercado (Forum), farmacia (Farmatodo), servicios (Viajea, Digitel), pisos, horarios e ingredientes.
-2. GOOGLE SEARCH GROUNDING (NOVEDADES Y EVENTOS):
-   - ${needsSearchGrounding ? 'Esta consulta requiere información reciente o novedades. Usa la herramienta de búsqueda de Google para complementar con eventos de la semana, actividades culturales, deportivas o noticias en Unicentro Maracay.' : 'Prioriza responder con precisión inmediata sobre la información fija del centro comercial.'}
-
-FORMATO ESTRICTO PARA SÍNTESIS DE VOZ (TEXT-TO-SPEECH):
-- Responde en 2 a 3 oraciones claras, fluidas y cálidas (máximo 45 palabras).
-- NUNCA uses símbolos de markdown (*, **, viñetas -, numerales # ni tablas).
-- Expresa los precios y cifras en palabras naturales (ej. "seis dólares con noventa y nueve centavos" o "$6.99").`;
+INSTRUCCIONES CLAVE DE DIÁLOGO:
+- Eres el asistente exclusivo de UNICENTRO MARACAY (Avenida José Casanova Godoy, Maracay, Venezuela).
+- Si la pregunta del usuario es muy genérica (ej: "tengo hambre", "qué venden", "busco un regalo"), indaga con preguntas cortas y amables para entender su preferencia antes de abrumarlo.
+- Al terminar cada respuesta informativa, haz una sugerencia relevante o pregunta contextual para continuar guiándolo (ej: "¿Deseas saber en qué piso se encuentra?", "¿Buscas opciones para almorzar o para picar?").
+- Si el usuario pregunta por algo que NO está en el directorio o en la web de Unicentro Maracay, NUNCA repitas información anterior ni inventes tiendas ajenas. Di explícitamente:
+  "No encontré esa información específica en nuestro directorio de Unicentro Maracay..." y pregunta qué tipo de producto o servicio busca para ofrecerle alternativas reales.
+- Redacta de 2 a 3 oraciones cálidas y fluidas (máximo 50 palabras), sin markdown ni viñetas.`;
 
       let promptContents = message;
       if (history && Array.isArray(history) && history.length > 0) {
         const recentHistory = history.map((h: any) => `${h.role === 'user' ? 'Usuario' : 'Asistente'}: ${h.text}`).join('\n');
-        promptContents = `Historial reciente:\n${recentHistory}\n\nPregunta actual del usuario: ${message}`;
+        promptContents = `Historial de conversación reciente:\n${recentHistory}\n\nNueva consulta del usuario: ${message}`;
       }
 
       // Try with Search Grounding if query is dynamic or novel
@@ -253,10 +244,10 @@ FORMATO ESTRICTO PARA SÍNTESIS DE VOZ (TEXT-TO-SPEECH):
         try {
           const groundedResponse = await ai.models.generateContent({
             model: "gemini-2.5-flash",
-            contents: `En el contexto de Unicentro Maracay (Maracay, Venezuela): ${promptContents}`,
+            contents: `En el centro comercial Unicentro Maracay (Av. Casanova Godoy, Maracay, Venezuela): ${promptContents}`,
             config: {
-              systemInstruction,
-              temperature: 0.6,
+              systemInstruction: robustSystemPrompt,
+              temperature: 0.5,
               tools: [{ googleSearch: {} }],
             },
           });
@@ -266,7 +257,6 @@ FORMATO ESTRICTO PARA SÍNTESIS DE VOZ (TEXT-TO-SPEECH):
             ?.replace(/•\s*/g, '')
             ?.replace(/\n+/g, ' ');
 
-          // Extract grounding metadata sources if available
           const searchChunks = groundedResponse.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
           const sources: Array<{ title: string; uri?: string }> = [];
           
@@ -284,7 +274,7 @@ FORMATO ESTRICTO PARA SÍNTESIS DE VOZ (TEXT-TO-SPEECH):
             });
           }
         } catch (groundingErr) {
-          console.warn("Fallo o límite en Search Grounding, continuando con respuesta sincronizada:", groundingErr);
+          console.warn("Search Grounding fallback, continuando con directorio sincronizado:", groundingErr);
         }
       }
 
@@ -294,7 +284,7 @@ FORMATO ESTRICTO PARA SÍNTESIS DE VOZ (TEXT-TO-SPEECH):
           model: "gemini-2.5-flash",
           contents: promptContents,
           config: {
-            systemInstruction,
+            systemInstruction: robustSystemPrompt,
             temperature: 0.5,
           },
         });
@@ -311,19 +301,19 @@ FORMATO ESTRICTO PARA SÍNTESIS DE VOZ (TEXT-TO-SPEECH):
           });
         }
       } catch (geminiErr) {
-        console.warn("Error en modelo estándar, recurriendo a motor semántico local:", geminiErr);
+        console.warn("Error en modelo Gemini, activando motor semántico Unicentro:", geminiErr);
       }
     }
 
-    // Smart Local Knowledge Base fallback with semantic NLP intent interpretation
-    const fallbackAnswer = extractKnowledgeAnswer(message, documentContext || '');
+    // Smart Local Knowledge Base fallback with strict anti-repetition
+    const fallbackAnswer = extractKnowledgeAnswer(message, documentContext || '', []);
     return res.json({
       reply: fallbackAnswer.reply,
       sourceType: fallbackAnswer.sourceType,
     });
   } catch (error: any) {
     console.error("Error al procesar consulta en /api/chat:", error);
-    const fallbackAnswer = extractKnowledgeAnswer(req.body?.message || '', req.body?.documentContext || '');
+    const fallbackAnswer = extractKnowledgeAnswer(req.body?.message || '', req.body?.documentContext || '', []);
     res.json({
       reply: fallbackAnswer.reply,
       sourceType: fallbackAnswer.sourceType,
@@ -332,7 +322,6 @@ FORMATO ESTRICTO PARA SÍNTESIS DE VOZ (TEXT-TO-SPEECH):
 });
 
 async function startServer() {
-  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

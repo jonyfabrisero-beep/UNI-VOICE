@@ -1,141 +1,222 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AssistantState, ChatMessage, VoiceSettings, KnowledgeDocument } from '../types';
 import { DEFAULT_KNOWLEDGE_DOC } from '../data/defaultKnowledge';
+import { UNICENTRO_SYSTEM_PROMPT } from '../data/assistantSystemPrompt';
+import { UNICENTRO_MARACAY_DIRECTORY, CommercialEntity } from '../data/unicentroDirectory';
 
-// Dynamic conversational & semantic intent interpreter (Universal fallback & contextual reasoner)
-function interpretContextConversational(query: string, documentContent: string): string {
+/**
+ * Intelligent and robust conversational fallback engine for Unicentro Maracay.
+ * Guarantees:
+ * 1. Exclusive focus on Unicentro Maracay.
+ * 2. Active inquiry on generic questions (food, shopping, beauty).
+ * 3. Proactive follow-up questions / suggestions at the end of each response.
+ * 4. Strict anti-repetition: if not found, explicitly states:
+ *    "No encontré esa información específica en nuestro directorio de Unicentro Maracay..."
+ *    instead of looping generic messages.
+ */
+function interpretContextConversational(
+  query: string, 
+  previousBotResponses: string[] = []
+): { reply: string; sourceType: 'directory' | 'grounding' | 'pdf' } {
   const q = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-  const doc = documentContent || "";
-  const docLower = doc.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-  // 1. Food, hunger, restaurants, burgers, pizza, sushi, coffee
-  const foodKeywords = [
-    'hambre', 'comer', 'comida', 'almorzar', 'almuerzo', 'cenar', 'cena', 'plato', 'picar', 'antojo',
-    'hamburguesa', 'burger', 'burguer', 'doppio', 'monster', 'pollo', 'crispy', 'combo', 'arepitas',
-    'papas', 'papitas', 'refresco', 'carne', 'rapida', 'restaurante', 'menu', 'sabroso', 'rico', 'alimento',
-    'pizza', 'sushi', 'cebiche', 'ceviche', 'shawarma', 'arabe', 'cafe', 'helado', 'gelato', 'postre', 'merienda'
-  ];
-  const hasFoodIntent = foodKeywords.some(kw => q.includes(kw));
+  // Helper to check if a response was already said recently to avoid repeating
+  const wasAlreadySaid = (candidate: string): boolean => {
+    return previousBotResponses.some(prev => {
+      const prevNorm = prev.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const candNorm = candidate.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      return prevNorm.includes(candNorm.slice(0, 30)) || candNorm.includes(prevNorm.slice(0, 30));
+    });
+  };
 
-  // 2. Specific food brands in Unicentro
+  // 1. GREETINGS & AMBIGUOUS OPENINGS -> Proactive welcoming + open inquiry
+  const greetingKeywords = ['hola', 'buenos dias', 'buenas tardes', 'buenas noches', 'que tal', 'quien eres', 'ayuda', 'como estas'];
+  if (greetingKeywords.some(kw => q.includes(kw))) {
+    return {
+      reply: "¡Hola! Bienvenido a Unicentro Maracay. Puedo orientarte sobre nuestro bulevar gastronómico, tiendas de moda, servicios, o eventos. ¿Qué te gustaría explorar hoy?",
+      sourceType: 'directory'
+    };
+  }
+
+  // 2. GENERIC FOOD / HUNGER -> Inquire to clarify cravings instead of dumping everything
+  const genericFood = ['hambre', 'comer', 'comida', 'almorzar', 'almuerzo', 'cenar', 'cena', 'restaurante', 'restaurantes', 'antojo', 'picar', 'desayuno'];
+  const hasGenericFood = genericFood.some(kw => q.includes(kw));
+
+  // Specific restaurant requests:
   if (q.includes('pizza') || q.includes('beato') || q.includes('demaciao')) {
-    return "En Unicentro Maracay tienes Beato Napoletano con pizzas a la leña en el bulevar gastronómico, y Demaciao Pizza para pizzas rápidas familiares.";
+    return {
+      reply: "En el bulevar cuentas con Beato Napoletano para auténtica pizza napolitana a la leña, y Demaciao Pizza para porciones y pizzas familiares. ¿Deseas saber en qué parte del bulevar se encuentran?",
+      sourceType: 'directory'
+    };
   }
-  if (q.includes('sushi') || q.includes('cebiche') || q.includes('ceviche') || q.includes('japones') || q.includes('asiatic')) {
-    return "Para comida japonesa y fusión peruana cuentas con Sushi & Cebiches en el bulevar, y Orbe Exotic Food con cócteles y comida asiática gourmet.";
+
+  if (q.includes('sushi') || q.includes('cebiche') || q.includes('ceviche') || q.includes('japones') || q.includes('asiatic') || q.includes('orbe')) {
+    return {
+      reply: "Para comida japonesa y fusión peruana tienes Sushi & Cebiches, o puedes visitar Orbe Exotic Food con cocina asiática gourmet. ¿Te gustaría saber sus horarios o pedir por delivery?",
+      sourceType: 'directory'
+    };
   }
-  if (q.includes('cafe') || q.includes('helado') || q.includes('gelato') || q.includes('postre') || q.includes('torta') || q.includes('merienda')) {
-    return "Para café y meriendas tienes Ventus Café & Bistro con cafés y frappes, o Biella Gelato con auténticos helados artesanales en el bulevar.";
+
+  if (q.includes('cafe') || q.includes('helado') || q.includes('gelato') || q.includes('postre') || q.includes('dulce') || q.includes('merienda') || q.includes('torta') || q.includes('frappe')) {
+    return {
+      reply: "Para merendar te recomiendo Ventus Café & Bistro con frappes y pastelería fina, o Biella Gelato con heladería artesanal italiana. ¿Buscas un café caliente o un postre frío?",
+      sourceType: 'directory'
+    };
   }
+
   if (q.includes('arabe') || q.includes('shawarma') || q.includes('falafel') || q.includes('lubnan')) {
-    return "Para comida árabe tradicional tienes Lubnan Shawarmas en el bulevar gastronómico, con shawarmas de carne, pollo, falafel y cremas.";
+    return {
+      reply: "En el bulevar gastronómico tienes Lubnan Shawarmas con shawarmas de pollo o carne, cremas y falafel. ¿Te gustaría que te indique cómo llegar desde la entrada?",
+      sourceType: 'directory'
+    };
   }
 
-  // 3. Ingredients, contents, recipe, cheese, bacon, bread
-  const ingredientKeywords = [
-    'ingrediente', 'lleva', 'trae', 'contiene', 'prepara', 'receta', 'queso', 'tocineta', 'pan',
-    'salsa', 'cebolla', 'lechuga', 'gouda', 'kraft', 'parmesano', 'pretzel', 'brioche', 'mayo', 'ranch'
-  ];
-  const hasIngredientIntent = ingredientKeywords.some(kw => q.includes(kw));
-
-  // 4. Price, cost, promos, discounts, cheap, expensive
-  const priceKeywords = [
-    'precio', 'costo', 'cuesta', 'vale', 'cuanto', 'promo', 'promocion', 'promociones', 'oferta',
-    'descuento', 'barato', 'economico', 'combo', 'dolar', 'dolares'
-  ];
-  const hasPriceIntent = priceKeywords.some(kw => q.includes(kw));
-
-  // 5. Beauty, salon, cosmetics, nails, hair
-  const beautyKeywords = [
-    'belleza', 'maquillaje', 'cosmetico', 'cosmetica', 'peinado', 'cabello', 'pelo', 'unas',
-    'estetica', 'salon', 'peluqueria', 'spa', 'skincare', 'piel', 'coreano', 'k-beauty', 'hallyu',
-    'glossy', 'mia', 'studio 1118', 'vijones', 'carolina reveron', 'linda', 'guapa'
-  ];
-  const hasBeautyIntent = beautyKeywords.some(kw => q.includes(kw));
-
-  // 6. Supermarket, pharmacy, services, travel, mobile
-  if (q.includes('farmacia') || q.includes('farmatodo') || q.includes('medicina') || q.includes('pastilla')) {
-    return "Unicentro Maracay cuenta con Farmatodo en planta baja con acceso vehicular y peatonal para medicinas, conveniencia y cuidado personal.";
-  }
-  if (q.includes('supermercado') || q.includes('mercado') || q.includes('forum') || q.includes('viveres') || q.includes('compras')) {
-    return "Cuentas con Forum Súper Mayorista en la entrada principal para compras de víveres, carnicería, panadería y licores al mayor y detal.";
-  }
-  if (q.includes('viaje') || q.includes('boleto') || q.includes('pasaje') || q.includes('vuelo') || q.includes('viajea')) {
-    return "En el área climatizada del piso 1 se encuentra la agencia Viajea, donde puedes gestionar boletos aéreos, paquetes turísticos y traslados.";
-  }
-  if (q.includes('digitel') || q.includes('linea') || q.includes('chip') || q.includes('esim') || q.includes('saldo')) {
-    return "En planta baja tienes el centro de atención Digitel para activación de líneas, planes 4G y recargas.";
-  }
-  if (q.includes('zapato') || q.includes('calzado') || q.includes('ropa') || q.includes('moda') || q.includes('arrow') || q.includes('jump')) {
-    return "Para moda y calzado dispones de tiendas como Jump, Jadu, X Shoes, Invictus y la boutique de ropa masculina ARROW.";
-  }
-
-  // 7. Schedule, hours, open, close
-  const scheduleKeywords = [
-    'horario', 'hora', 'abierto', 'abren', 'cierran', 'atienden', 'tiempo', 'tarde', 'noche', 'domingo', 'hoy', 'manana'
-  ];
-  const hasScheduleIntent = scheduleKeywords.some(kw => q.includes(kw));
-
-  // 8. Location, directions, address
-  const locationKeywords = [
-    'ubicacion', 'donde', 'queda', 'llegar', 'piso', 'bulevar', 'entrada', 'sitio', 'direccion', 'local', 'lugar', 'avenida', 'casanova'
-  ];
-  const hasLocationIntent = locationKeywords.some(kw => q.includes(kw));
-
-  // 9. Delivery & WhatsApp
-  const contactKeywords = [
-    'whatsapp', 'telefono', 'numero', 'contacto', 'pedir', 'pedido', 'delivery', 'domicilio', 'llamar', 'envio'
-  ];
-  const hasContactIntent = contactKeywords.some(kw => q.includes(kw));
-
-  // 10. Greetings
-  const greetingKeywords = ['hola', 'buenos dias', 'buenas tardes', 'buenas noches', 'que tal', 'quien eres', 'ayuda'];
-  const hasGreetingIntent = greetingKeywords.some(kw => q.includes(kw));
-
-  // Conversational Intent Resolution:
-  if (hasIngredientIntent) {
-    if (q.includes('monster') || q.includes('premium') || q.includes('pretzel') || q.includes('gouda')) {
-      return "La hamburguesa Monster Cheese de Pollos Gran Combo lleva pan pretzel, pollo crispy, queso gouda holandés, mermelada de tocineta, tira de tocineta extra, lechuga fresca y salsa mayo ranch.";
+  // Ingredients & Burgers (Pollos Gran Combo / Master Burguer)
+  const ingredientKeywords = ['ingrediente', 'lleva', 'trae', 'contiene', 'prepara', 'receta', 'queso', 'tocineta', 'pan', 'gouda', 'kraft', 'parmesano', 'pretzel', 'brioche'];
+  if (ingredientKeywords.some(kw => q.includes(kw))) {
+    if (q.includes('monster') || q.includes('pretzel') || q.includes('gouda')) {
+      return {
+        reply: "La Monster Cheese de Pollos Gran Combo incluye pan pretzel, pollo crispy, queso gouda holandés, mermelada de tocineta, lechuga y salsa mayo ranch por 9 dólares con 99. ¿Deseas conocer su número de WhatsApp para pedirla?",
+        sourceType: 'pdf'
+      };
     }
-    if (q.includes('doppio') || q.includes('kraft') || q.includes('brioche') || q.includes('estandar') || q.includes('standard')) {
-      return "La hamburguesa Doppio Cheese viene con pan brioche con queso parmesano, pollo crispy, queso Kraft, tocineta crujiente, cebolla caramelizada y salsa de ajo parmesano.";
+    if (q.includes('doppio') || q.includes('kraft') || q.includes('brioche') || q.includes('estandar')) {
+      return {
+        reply: "La Doppio Cheese trae pan brioche con queso parmesano, pollo crispy, queso Kraft, tocineta crujiente, cebolla caramelizada y salsa ajo parmesano por 6 dólares con 99. ¿Te gustaría que te dé el contacto para delivery?",
+        sourceType: 'pdf'
+      };
     }
-    return "En Pollos Gran Combo tienes la Doppio Cheese con queso Kraft y cebolla caramelizada ($6.99), o la Monster Cheese con queso gouda holandés y mermelada de tocineta en pan pretzel ($9.99).";
+    return {
+      reply: "En Pollos Gran Combo tienes la Doppio Cheese con queso Kraft ($6.99) y la Monster Cheese con queso gouda en pan pretzel ($9.99). ¿Prefieres sabores clásicos o una hamburguesa gourmet con pan pretzel?",
+      sourceType: 'pdf'
+    };
   }
 
-  if (hasPriceIntent) {
-    if (q.includes('barat') || q.includes('econom') || q.includes('menor')) {
-      return "La opción más económica de hamburguesa es la Doppio Cheese por 6 dólares con 99 centavos, mientras que la Monster Cheese cuesta 9 dólares con 99 centavos.";
+  // Promos / Combos
+  const priceKeywords = ['precio', 'costo', 'cuesta', 'vale', 'cuanto', 'promo', 'promocion', 'promociones', 'oferta', 'descuento', 'barato', 'economico', 'combo', 'dolar'];
+  if (priceKeywords.some(kw => q.includes(kw))) {
+    return {
+      reply: "En Pollos Gran Combo tienes la Doppio Cheese por $6.99, la Monster Cheese por $9.99 y el combo familiar Mega Sonrisa con 6 piezas de pollo por $19.99. ¿Buscas una opción individual o un combo familiar?",
+      sourceType: 'pdf'
+    };
+  }
+
+  // Generic food inquiry -> INQUIRE TO REFINE
+  if (hasGenericFood) {
+    return {
+      reply: "En nuestro bulevar gastronómico tenemos pollo crispy y hamburguesas en Pollos Gran Combo, pizzas a la leña en Beato Napoletano, sushi en Sushi & Cebiches y carnes o comida árabe en Lubnan. ¿Qué tipo de comida te apetece hoy: algo rápido, comida internacional o un café con postre?",
+      sourceType: 'directory'
+    };
+  }
+
+  // 3. BEAUTY & AESTHETICS
+  const beautyKeywords = ['belleza', 'maquillaje', 'cosmetico', 'cosmetica', 'peinado', 'cabello', 'pelo', 'unas', 'estetica', 'salon', 'peluqueria', 'spa', 'skincare', 'piel', 'k-beauty', 'hallyu', 'glossy', 'mia', 'studio 1118', 'vijones', 'carolina reveron'];
+  if (beautyKeywords.some(kw => q.includes(kw))) {
+    if (q.includes('unas') || q.includes('manicura') || q.includes('pedicura') || q.includes('vijones')) {
+      return {
+        reply: "Para uñas y manicura spa cuentas con Vijones Beauty Bar en el piso 1 y Carolina Reveron para quiropedia clínica. ¿Buscas un diseño de uñas o atención quiropódica?",
+        sourceType: 'directory'
+      };
     }
-    return "En Pollos Gran Combo tienes la hamburguesa Doppio Cheese por $6.99, la Monster Cheese por $9.99 y el combo familiar Mega Sonrisa con 6 piezas de pollo, arepitas y papitas por $19.99.";
+    if (q.includes('skincare') || q.includes('corean') || q.includes('piel') || q.includes('hallyu') || q.includes('serum')) {
+      return {
+        reply: "Para cuidado de la piel tienes Hallyu K-Beauty en el piso 1, con cosmética coreana y protectores virales. ¿Buscas una rutina facial completa o productos específicos?",
+        sourceType: 'directory'
+      };
+    }
+    return {
+      reply: "En Unicentro Maracay tenemos Hallyu K-Beauty para skincare coreano, Glossy Beauty Studio para balayage y pestañas, MÏA Cosmetics y Vijones Beauty Bar para uñas. ¿Qué servicio de belleza te gustaría realizarte hoy?",
+      sourceType: 'directory'
+    };
   }
 
-  if (hasBeautyIntent) {
-    return "En Unicentro Maracay contamos con varias opciones de belleza: Hallyu K-Beauty para cosmética coreana, Glossy Beauty Studio, MÏA Cosmetics, Studio 1118 y Vijones Beauty Bar para manicura.";
+  // 4. SUPERMARKET & PHARMACY
+  if (q.includes('farmacia') || q.includes('farmatodo') || q.includes('medicina') || q.includes('remedio') || q.includes('pastilla') || q.includes('salud')) {
+    return {
+      reply: "Contamos con Farmatodo en planta baja con acceso vehicular y peatonal para medicamentos y cuidado personal. ¿Necesitas saber si cuentan con estacionamiento cercano?",
+      sourceType: 'directory'
+    };
   }
 
-  if (hasContactIntent) {
-    return "Puedes hacer tus pedidos o solicitar delivery de Pollos Gran Combo escribiendo directamente a su WhatsApp al +58 424 306 5534.";
+  if (q.includes('supermercado') || q.includes('forum') || q.includes('mercado') || q.includes('viveres') || q.includes('compras') || q.includes('charcuteria') || q.includes('carniceria')) {
+    return {
+      reply: "Cuentas con Forum Súper Mayorista en la entrada principal para compras completas al mayor y detal. ¿Buscas artículos de mercado diario o víveres importados?",
+      sourceType: 'directory'
+    };
   }
 
-  if (hasScheduleIntent) {
-    return "Unicentro Maracay abre de lunes a domingo de 10:00 AM a 8:00 PM, y los locales gastronómicos del bulevar atienden hasta las 10:00 o 11:00 PM.";
+  // 5. SERVICES, TRAVEL, TELECOM
+  if (q.includes('viaje') || q.includes('boleto') || q.includes('vuelo') || q.includes('pasaje') || q.includes('viajea') || q.includes('turismo')) {
+    return {
+      reply: "En el piso 1 se encuentra la agencia Viajea, donde gestionan boletos aéreos nacionales e internacionales y paquetes turísticos. ¿Planeas un viaje nacional o al exterior?",
+      sourceType: 'directory'
+    };
   }
 
-  if (hasLocationIntent) {
-    return "Unicentro Maracay está ubicado en la Avenida José Casanova Godoy. Pollos Gran Combo se encuentra en el bulevar gastronómico al lado de la entrada al área climatizada.";
+  if (q.includes('digitel') || q.includes('telefono') || q.includes('linea') || q.includes('chip') || q.includes('esim') || q.includes('saldo') || q.includes('recarga')) {
+    return {
+      reply: "En planta baja tienes el centro de atención Digitel para activación de líneas 4G, eSIM y recargas. ¿Deseas saber el horario de atención del centro de servicios?",
+      sourceType: 'directory'
+    };
   }
 
-  if (hasFoodIntent) {
-    return "En el bulevar gastronómico tienes opciones como Pollos Gran Combo con pollo crispy y hamburguesas, Beato Napoletano para pizzas, Sushi & Cebiches y Zeta Burger.";
+  // 6. CLOTHING & SHOES
+  if (q.includes('zapato') || q.includes('calzado') || q.includes('ropa') || q.includes('moda') || q.includes('arrow') || q.includes('jump') || q.includes('jadu') || q.includes('camisa') || q.includes('traje')) {
+    return {
+      reply: "En moda y calzado tienes Jump y Jadu para zapatos deportivos y casuales, X Shoes e Invictus para calzado formal, y la boutique masculina ARROW. ¿Buscas ropa para dama, caballero o calzado deportivo?",
+      sourceType: 'directory'
+    };
   }
 
-  if (hasGreetingIntent) {
-    return "¡Hola! Bienvenido a Unicentro Maracay. Te puedo orientar sobre tiendas, bulevar gastronómico, belleza, servicios y promociones. ¿Qué te gustaría consultar?";
+  // 7. HOURS & ADDRESS
+  const scheduleKeywords = ['horario', 'hora', 'abierto', 'abren', 'cierran', 'atienden', 'domingo', 'hoy'];
+  if (scheduleKeywords.some(kw => q.includes(kw))) {
+    return {
+      reply: "Unicentro Maracay abre de lunes a domingo de 10:00 AM a 8:00 PM, y nuestro bulevar gastronómico atiende hasta las 10:00 o 11:00 de la noche. ¿Planeas visitarnos para almorzar o para cenar?",
+      sourceType: 'directory'
+    };
   }
 
-  // General fallback
-  return "Te puedo ayudar con información de tiendas, bulevar gastronómico, ubicación, eventos de Unicentro Maracay y las promociones de Pollos Gran Combo. ¿En qué te puedo colaborar?";
+  const locationKeywords = ['ubicacion', 'donde', 'queda', 'llegar', 'piso', 'direccion', 'casanova', 'maracay'];
+  if (locationKeywords.some(kw => q.includes(kw))) {
+    return {
+      reply: "Estamos ubicados en la Avenida José Casanova Godoy en Maracay, con más de 200 locales y amplio estacionamiento vigilado. ¿Vienes en vehículo propio o en transporte público?",
+      sourceType: 'directory'
+    };
+  }
+
+  // 8. CONTACT & WHATSAPP
+  const contactKeywords = ['whatsapp', 'telefono', 'numero', 'contacto', 'pedir', 'pedido', 'delivery', 'domicilio', 'llamar'];
+  if (contactKeywords.some(kw => q.includes(kw))) {
+    return {
+      reply: "Para pedidos y delivery de Pollos Gran Combo puedes escribir al WhatsApp al +58 424 306 5534. ¿Deseas el número de algún otro restaurante de nuestro bulevar?",
+      sourceType: 'pdf'
+    };
+  }
+
+  // 9. DYNAMIC SEARCH IN LOCAL DIRECTORY (Word matching with commercial entities)
+  const matchedEntity = UNICENTRO_MARACAY_DIRECTORY.find((entity: CommercialEntity) => {
+    const matchName = q.includes(entity.name.toLowerCase());
+    const matchKey = entity.keywords.some(k => q.includes(k));
+    return matchName || matchKey;
+  });
+
+  if (matchedEntity) {
+    const fallbackAnswer = `En Unicentro Maracay contamos con ${matchedEntity.name}, ubicado en ${matchedEntity.floor} (${matchedEntity.location}). Ofrecen ${matchedEntity.description.slice(0, 100)}... ¿Te gustaría saber cómo contactarlos o cómo llegar?`;
+    if (!wasAlreadySaid(fallbackAnswer)) {
+      return {
+        reply: fallbackAnswer,
+        sourceType: 'directory'
+      };
+    }
+  }
+
+  // 10. STRICT FALLBACK WHEN NOT FOUND (Anti-repetition requirement)
+  // Instead of repeating previous messages, explicitly states:
+  return {
+    reply: "No encontré esa información específica en nuestro directorio de Unicentro Maracay. ¿Te gustaría que te recomiende tiendas similares o que busque en nuestras opciones del bulevar gastronómico?",
+    sourceType: 'directory'
+  };
 }
 
 export function useVoiceAssistant() {
@@ -148,6 +229,7 @@ export function useVoiceAssistant() {
       role: 'assistant',
       text: 'Bienvenido a tu centro comercial inteligente, ¿En que puedo ayudarte?',
       timestamp: new Date(),
+      sourceType: 'directory',
     },
   ]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -189,57 +271,7 @@ export function useVoiceAssistant() {
   const isSpeechRecognitionSupported = typeof window !== 'undefined' && 
     ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
 
-  // Helper to score and select the highest quality natural Latin American Spanish voice
-  const findBestSpanishVoice = (voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined => {
-    if (!voices || voices.length === 0) return undefined;
-
-    // Strictly filter for Spanish voices and discard English/foreign synthesizers
-    const spanishVoices = voices.filter((v) => {
-      const l = v.lang.toLowerCase();
-      const n = v.name.toLowerCase();
-      const isSpanish = l.startsWith('es') || l.includes('spa') || n.includes('spanish') || n.includes('español');
-      const isEnglish = n.includes('english') || (l.startsWith('en') && !n.includes('spanish'));
-      return isSpanish && !isEnglish;
-    });
-
-    const candidateList = spanishVoices.length > 0 ? spanishVoices : voices.filter(v => v.lang.toLowerCase().startsWith('es'));
-    if (candidateList.length === 0) return undefined;
-
-    const scoreVoice = (v: SpeechSynthesisVoice): number => {
-      let score = 0;
-      const name = v.name.toLowerCase();
-      const lang = v.lang.toLowerCase();
-
-      // Priority 1: Latin American Spanish specific dialects
-      if (lang === 'es-mx' || lang === 'es_mx') score += 180;
-      if (lang.includes('419') || lang.includes('co') || lang.includes('ve') || lang.includes('ar') || lang.includes('cl') || lang.includes('pe')) score += 160;
-      if (lang === 'es-us' && (name.includes('natural') || name.includes('online') || name.includes('google'))) score += 140;
-
-      // Priority 2: Google & Microsoft Natural/Neural Latin voices
-      if (name.includes('google español') || name.includes('google spanish')) score += 150;
-      if (name.includes('dalia') || name.includes('jorge') || name.includes('sabina') || name.includes('salome') || name.includes('gonzalo') || name.includes('paulina')) score += 140;
-      if (name.includes('natural') || name.includes('online')) score += 120;
-      if (name.includes('neural')) score += 110;
-      if (name.includes('enhanced') || name.includes('premium')) score += 90;
-      if (name.includes('apple') || name.includes('siri') || name.includes('monica') || name.includes('sofia')) score += 80;
-
-      // Penalize robotic synthesizers or non-Latin
-      if (name.includes('desktop') || name.includes('espeak') || name.includes('compact') || name.includes('synthesizer')) {
-        score -= 60;
-      }
-
-      if (lang === 'es-es') {
-        score += 30; // Spanish from Spain is better than English fallback, but lower than Latin
-      }
-
-      return score;
-    };
-
-    const sorted = [...candidateList].sort((a, b) => scoreVoice(b) - scoreVoice(a));
-    return sorted[0];
-  };
-
-  // Initialize Web Speech Voices with Natural Voice Priority
+  // Load browser voices
   useEffect(() => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
@@ -247,95 +279,89 @@ export function useVoiceAssistant() {
       const voices = window.speechSynthesis.getVoices();
       if (voices.length > 0) {
         setAvailableVoices(voices);
-        const bestVoice = findBestSpanishVoice(voices);
-
-        if (bestVoice) {
-          setVoiceSettings((prev) => {
-            const updated = {
-              ...prev,
-              voiceURI: prev.voiceURI || bestVoice.voiceURI,
-              voiceName: prev.voiceURI ? prev.voiceName : bestVoice.name,
-              voiceLang: prev.voiceURI ? prev.voiceLang : bestVoice.lang,
-              rate: prev.rate || 0.98,
-              pitch: prev.pitch || 1.0,
-            };
-            try {
-              localStorage.setItem('uni_voice_settings', JSON.stringify(updated));
-            } catch (e) {
-              // ignore
-            }
-            return updated;
-          });
-        }
       }
     };
 
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
-  }, []);
 
-  // Safe audio visualizer pulse for listening mode
-  const startAudioCapture = useCallback(async () => {
-    // Generate organic ambient listening pulses for the orb visualizer
-    const pulseInterval = setInterval(() => {
-      if (stateRef.current !== 'listening') {
-        clearInterval(pulseInterval);
-        return;
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.onvoiceschanged = null;
       }
-      setAudioLevel(0.35 + Math.random() * 0.45);
-    }, 80);
-    (animFrameRef as any)._listeningInterval = pulseInterval;
+    };
   }, []);
 
-  const stopAudioCapture = useCallback(() => {
-    if ((animFrameRef as any)._listeningInterval) {
-      clearInterval((animFrameRef as any)._listeningInterval);
-      (animFrameRef as any)._listeningInterval = null;
+  // Save voice settings to localStorage
+  const updateVoiceSettings = useCallback((newSettings: Partial<VoiceSettings>) => {
+    setVoiceSettings((prev) => {
+      const updated = { ...prev, ...newSettings };
+      try {
+        localStorage.setItem('uni_voice_settings', JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Could not persist voice settings');
+      }
+      return updated;
+    });
+  }, []);
+
+  // Find best Spanish voice available
+  const findBestSpanishVoice = useCallback((): SpeechSynthesisVoice | null => {
+    if (availableVoices.length === 0) return null;
+
+    if (voiceSettings.voiceURI) {
+      const exact = availableVoices.find((v) => v.voiceURI === voiceSettings.voiceURI);
+      if (exact) return exact;
     }
-    setAudioLevel(0);
-  }, []);
 
-  // Stop current AI speaking voice
+    const preferredLangs = ['es-MX', 'es-VE', 'es-US', 'es-CO', 'es-419', 'es-ES', 'es'];
+    for (const lang of preferredLangs) {
+      const matched = availableVoices.find((v) =>
+        v.lang.toLowerCase().replace('_', '-').startsWith(lang.toLowerCase())
+      );
+      if (matched) return matched;
+    }
+
+    const genericSpanish = availableVoices.find((v) => v.lang.toLowerCase().startsWith('es'));
+    return genericSpanish || availableVoices[0] || null;
+  }, [availableVoices, voiceSettings.voiceURI]);
+
+  // Stop speaking
   const stopSpeaking = useCallback(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
-    currentUtteranceRef.current = null;
-    if (state === 'speaking') {
-      setState('idle');
-      setAudioLevel(0);
+    if (currentUtteranceRef.current) {
+      if ((currentUtteranceRef.current as any)._pulseInterval) {
+        clearInterval((currentUtteranceRef.current as any)._pulseInterval);
+      }
+      currentUtteranceRef.current = null;
     }
-  }, [state]);
+    setState('idle');
+    setAudioLevel(0);
+  }, []);
 
-  // Speak AI response aloud using SpeechSynthesis
+  // Speak response with fluid Text-To-Speech
   const speakResponse = useCallback((text: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window) || !voiceSettings.autoSpeak) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    if (!voiceSettings.autoSpeak) return;
+
+    window.speechSynthesis.cancel();
+
+    // Clean formatting for crisp speech
+    const cleanSpeech = text
+      .replace(/[*#_~`]/g, '')
+      .replace(/•\s*/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleanSpeech) {
       setState('idle');
       return;
     }
 
-    // Cancel previous speech
-    window.speechSynthesis.cancel();
-
-    // Clean and normalize text for natural conversational speech
-    const cleanText = text
-      .replace(/https?:\/\/\S+/gi, '') // remove URLs
-      .replace(/[*_#`~[\]()<>]/g, '') // remove markdown artifacts
-      .replace(/\bc\/u\b/gi, 'cada una')
-      .replace(/\bej\./gi, 'por ejemplo')
-      .replace(/\bwhatsapp\b/gi, 'Guasap')
-      .replace(/\bpromos?\b/gi, 'promociones')
-      .replace(/[:;]\s*/g, '. ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    currentUtteranceRef.current = utterance;
-
-    // Dynamically retrieve fresh voices from browser in case they loaded late
-    const currentVoices = window.speechSynthesis.getVoices();
-    const voicePool = currentVoices.length > 0 ? currentVoices : availableVoices;
-    const selectedVoice = voicePool.find((v) => v.voiceURI === voiceSettings.voiceURI) || findBestSpanishVoice(voicePool);
+    const utterance = new SpeechSynthesisUtterance(cleanSpeech);
+    const selectedVoice = findBestSpanishVoice();
 
     if (selectedVoice) {
       utterance.voice = selectedVoice;
@@ -344,27 +370,18 @@ export function useVoiceAssistant() {
       utterance.lang = 'es-MX';
     }
 
-    utterance.rate = voiceSettings.rate || 0.98;
-    utterance.pitch = voiceSettings.pitch || 1.0;
+    utterance.rate = voiceSettings.rate;
+    utterance.pitch = voiceSettings.pitch;
     utterance.volume = voiceSettings.volume;
+
+    currentUtteranceRef.current = utterance;
 
     utterance.onstart = () => {
       setState('speaking');
-      let speechStep = 0;
-      // Multi-harmonic vocal cadence generator (syllables, phrase cadence & volume dynamics)
       const pulseInterval = setInterval(() => {
-        if (stateRef.current !== 'speaking') {
-          clearInterval(pulseInterval);
-          return;
-        }
-        speechStep += 0.18;
-        // Syllable rhythm (~6Hz) + Phrase breathing wave (~1.5Hz) + Micro-fluctuation
-        const syllableWave = Math.sin(speechStep * 3.2) * 0.35 + 0.35;
-        const phraseWave = Math.sin(speechStep * 0.8) * 0.25 + 0.25;
-        const jitter = (Math.random() - 0.5) * 0.2;
-        const calculatedLevel = Math.max(0.15, Math.min(1.0, syllableWave * 0.6 + phraseWave * 0.3 + jitter + 0.2));
-        setAudioLevel(calculatedLevel);
-      }, 50);
+        const simulatedAudio = 0.35 + Math.random() * 0.55;
+        setAudioLevel(simulatedAudio);
+      }, 90);
       (utterance as any)._pulseInterval = pulseInterval;
     };
 
@@ -387,7 +404,6 @@ export function useVoiceAssistant() {
       currentUtteranceRef.current = null;
     };
 
-    // Small delay to ensure synthesis queue is cleared and resumed
     setTimeout(() => {
       try {
         if (window.speechSynthesis.paused) {
@@ -399,9 +415,9 @@ export function useVoiceAssistant() {
         setState('idle');
       }
     }, 40);
-  }, [availableVoices, voiceSettings, findBestSpanishVoice]);
+  }, [voiceSettings, findBestSpanishVoice]);
 
-  // Auto-speak welcome greeting when app starts
+  // Auto-speak initial greeting once
   const hasSpokenWelcomeRef = useRef(false);
 
   useEffect(() => {
@@ -413,12 +429,10 @@ export function useVoiceAssistant() {
       speakResponse('Bienvenido a tu centro comercial inteligente, ¿En que puedo ayudarte?');
     };
 
-    // Attempt auto-speech once speech synthesis engine is ready
     const timer = setTimeout(() => {
       triggerWelcome();
     }, 500);
 
-    // Fallback if browser security blocks speech before first user interaction
     const handleFirstInteraction = () => {
       if (!hasSpokenWelcomeRef.current) {
         triggerWelcome();
@@ -440,7 +454,7 @@ export function useVoiceAssistant() {
     };
   }, [speakResponse]);
 
-  // State ref for intervals & latest transcripts
+  // State refs
   const stateRef = useRef(state);
   stateRef.current = state;
   const messagesRef = useRef(messages);
@@ -451,22 +465,20 @@ export function useVoiceAssistant() {
   const silenceTimeoutRef = useRef<any>(null);
   const processQueryRef = useRef<(text: string) => Promise<void>>(async () => {});
 
-  // Process a user query through backend Gemini API or local knowledge matcher
+  // Process user query through Gemini API with System Prompt and strict fallback
   const processQuery = useCallback(async (queryText: string) => {
     const cleanQuery = queryText.trim();
     if (!cleanQuery) return;
 
-    // Clear speech recognition
     if (silenceTimeoutRef.current) {
       clearTimeout(silenceTimeoutRef.current);
       silenceTimeoutRef.current = null;
     }
     latestTranscriptRef.current = '';
 
-    // Stop speaking if was active
     stopSpeaking();
 
-    // Add user message to history
+    // Append user message
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
@@ -482,14 +494,20 @@ export function useVoiceAssistant() {
     let sources: Array<{ title: string; uri?: string }> | undefined = undefined;
     let sourceType: 'directory' | 'grounding' | 'pdf' | undefined = 'directory';
 
+    // Collect previous assistant replies to prevent repetition
+    const previousReplies = messagesRef.current
+      .filter(m => m.role === 'assistant')
+      .map(m => m.text);
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: cleanQuery,
+          systemPrompt: UNICENTRO_SYSTEM_PROMPT,
           documentContext: knowledgeDocRef.current.content,
-          history: messagesRef.current.slice(-4).map((m) => ({
+          history: messagesRef.current.slice(-6).map((m) => ({
             role: m.role,
             text: m.text,
           })),
@@ -504,15 +522,23 @@ export function useVoiceAssistant() {
       const rawResponse = data.reply || data.text || '';
       sources = data.sources;
       sourceType = data.sourceType || 'directory';
-      
-      // Clean up markdown/bullet points so it sounds natural in TTS & reads clearly
-      assistantResponseText = rawResponse
-        ? rawResponse.replace(/[*#_~`]/g, '').replace(/•\s*/g, '').replace(/\n+/g, ' ').trim()
-        : interpretContextConversational(cleanQuery, knowledgeDocRef.current.content);
+
+      if (rawResponse) {
+        assistantResponseText = rawResponse
+          .replace(/[*#_~`]/g, '')
+          .replace(/•\s*/g, '')
+          .replace(/\n+/g, ' ')
+          .trim();
+      } else {
+        const fb = interpretContextConversational(cleanQuery, previousReplies);
+        assistantResponseText = fb.reply;
+        sourceType = fb.sourceType;
+      }
     } catch (err) {
-      console.warn('Using local conversational semantic interpreter fallback:', err);
-      assistantResponseText = interpretContextConversational(cleanQuery, knowledgeDocRef.current.content);
-      sourceType = 'directory';
+      console.warn('Using robust local fallback for Unicentro Maracay:', err);
+      const fb = interpretContextConversational(cleanQuery, previousReplies);
+      assistantResponseText = fb.reply;
+      sourceType = fb.sourceType;
     }
 
     const assistantMsg: ChatMessage = {
@@ -530,7 +556,7 @@ export function useVoiceAssistant() {
 
   processQueryRef.current = processQuery;
 
-  // Toggle listening state
+  // Toggle voice recognition
   const toggleListening = useCallback(() => {
     if (stateRef.current === 'speaking') {
       stopSpeaking();
@@ -538,54 +564,30 @@ export function useVoiceAssistant() {
     }
 
     if (isRecognizingRef.current || stateRef.current === 'listening') {
-      // Stop recognition and submit if we already captured speech
-      if (silenceTimeoutRef.current) {
-        clearTimeout(silenceTimeoutRef.current);
-        silenceTimeoutRef.current = null;
-      }
-      
-      const textToSubmit = latestTranscriptRef.current.trim();
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
-        } catch (e) {}
+        } catch (e) {
+          console.warn('Error stopping recognition:', e);
+        }
       }
-      stopAudioCapture();
       isRecognizingRef.current = false;
-      
-      if (textToSubmit) {
-        processQueryRef.current(textToSubmit);
-      } else {
-        setState('idle');
-      }
+      setState('idle');
       return;
     }
 
     if (!isSpeechRecognitionSupported) {
-      setErrorMessage('Tu navegador no soporta reconocimiento de voz. Usa la caja de texto inferior.');
-      setState('error');
+      setErrorMessage('El reconocimiento de voz no está disponible en este navegador.');
       return;
     }
 
-    // Stop any ongoing speech
-    stopSpeaking();
-    latestTranscriptRef.current = '';
-
     try {
-      const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      const recognition = new SpeechRec();
-      recognitionRef.current = recognition;
-
-      // Configure Speech Recognition for Latin American Spanish (es-MX is the standard Latin American dialect recognized by all browsers)
-      const userBrowserLang = typeof navigator !== 'undefined' ? (navigator.language || '').toLowerCase() : '';
-      if (userBrowserLang.startsWith('es') && userBrowserLang !== 'es-419') {
-        recognition.lang = userBrowserLang;
-      } else {
-        recognition.lang = 'es-MX';
-      }
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
 
       recognition.continuous = true;
       recognition.interimResults = true;
+      recognition.lang = 'es-MX';
       recognition.maxAlternatives = 1;
 
       recognition.onstart = () => {
@@ -594,152 +596,157 @@ export function useVoiceAssistant() {
         setErrorMessage(null);
         setLiveTranscript('');
         latestTranscriptRef.current = '';
-        startAudioCapture();
       };
 
       recognition.onresult = (event: any) => {
-        let interimText = '';
-        let finalText = '';
+        let currentInterim = '';
+        let currentFinal = '';
 
-        for (let i = 0; i < event.results.length; ++i) {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
           const item = event.results[i];
           if (item.isFinal) {
-            finalText += item[0].transcript + ' ';
+            currentFinal += item[0].transcript;
           } else {
-            interimText += item[0].transcript + ' ';
+            currentInterim += item[0].transcript;
           }
         }
 
-        const combinedText = (finalText + interimText).trim();
-        if (combinedText) {
-          latestTranscriptRef.current = combinedText;
-          setLiveTranscript(combinedText);
+        const combinedTranscript = (currentFinal || currentInterim).trim();
+        if (combinedTranscript) {
+          setLiveTranscript(combinedTranscript);
+          latestTranscriptRef.current = combinedTranscript;
+        }
 
-          // Reset silence debounce timer (1100ms of quiet after speaking auto-submits)
-          if (silenceTimeoutRef.current) {
-            clearTimeout(silenceTimeoutRef.current);
-          }
-          silenceTimeoutRef.current = setTimeout(() => {
-            if (isRecognizingRef.current && latestTranscriptRef.current.trim()) {
-              const textToSend = latestTranscriptRef.current.trim();
-              if (recognitionRef.current) {
-                try { recognitionRef.current.stop(); } catch (e) {}
+        // Reset silence detection timeout (1.5s silence triggers query processing)
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+        }
+
+        silenceTimeoutRef.current = setTimeout(() => {
+          const textToSend = latestTranscriptRef.current.trim();
+          if (textToSend) {
+            if (recognitionRef.current) {
+              try {
+                recognitionRef.current.stop();
+              } catch (e) {
+                // Ignore
               }
-              isRecognizingRef.current = false;
-              stopAudioCapture();
-              processQueryRef.current(textToSend);
             }
-          }, 1100);
-        }
+            isRecognizingRef.current = false;
+            processQueryRef.current(textToSend);
+          }
+        }, 1500);
       };
 
       recognition.onerror = (event: any) => {
-        console.warn('Speech recognition status:', event.error);
-
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          if (silenceTimeoutRef.current) {
-            clearTimeout(silenceTimeoutRef.current);
-            silenceTimeoutRef.current = null;
-          }
-          isRecognizingRef.current = false;
-          stopAudioCapture();
-          setErrorMessage('Permiso de micrófono bloqueado. Por favor permite el acceso al micrófono en tu navegador o escribe tu consulta.');
-          setState('error');
-        } else if (event.error === 'network') {
-          if (silenceTimeoutRef.current) {
-            clearTimeout(silenceTimeoutRef.current);
-            silenceTimeoutRef.current = null;
-          }
-          isRecognizingRef.current = false;
-          stopAudioCapture();
-          setErrorMessage('El servicio de voz del navegador no pudo conectarse. Puedes escribir tu pregunta en la barra inferior.');
-          setState('idle');
-        } else if (event.error === 'no-speech') {
-          // If no speech heard yet, allow user more time instead of abrupt cancel
-          console.log('No speech detected yet, waiting for user...');
-        } else if (event.error === 'aborted') {
-          // Aborted by user action or re-click
-        } else {
-          const textToSubmit = latestTranscriptRef.current.trim();
-          if (silenceTimeoutRef.current) {
-            clearTimeout(silenceTimeoutRef.current);
-            silenceTimeoutRef.current = null;
-          }
-          isRecognizingRef.current = false;
-          stopAudioCapture();
-          if (textToSubmit) {
-            processQueryRef.current(textToSubmit);
-          } else {
-            setState('idle');
-          }
+        console.warn('Speech recognition warning/error:', event.error);
+        if (event.error === 'no-speech') {
+          return;
         }
+        if (event.error === 'not-allowed') {
+          setErrorMessage('Permiso de micrófono denegado. Permite el acceso para hablar.');
+        }
+        isRecognizingRef.current = false;
+        setState('idle');
       };
 
       recognition.onend = () => {
         isRecognizingRef.current = false;
-        stopAudioCapture();
-        if (silenceTimeoutRef.current) {
-          clearTimeout(silenceTimeoutRef.current);
-          silenceTimeoutRef.current = null;
-        }
-
-        const captured = latestTranscriptRef.current.trim();
-        if (stateRef.current === 'listening' && captured) {
-          processQueryRef.current(captured);
-        } else if (stateRef.current === 'listening') {
+        if (stateRef.current === 'listening') {
           setState('idle');
         }
       };
 
+      recognitionRef.current = recognition;
       recognition.start();
-    } catch (err: any) {
-      console.error('Failed to start speech recognition:', err);
-      setErrorMessage(err.message || 'No se pudo iniciar el micrófono');
-      setState('error');
-      stopAudioCapture();
+
+      // Audio visualizer setup via Web Audio API
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+          .then((stream) => {
+            mediaStreamRef.current = stream;
+            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+            const audioCtx = new AudioCtx();
+            const analyser = audioCtx.createAnalyser();
+            const source = audioCtx.createMediaStreamSource(stream);
+
+            analyser.fftSize = 64;
+            analyser.smoothingTimeConstant = 0.8;
+            source.connect(analyser);
+
+            audioContextRef.current = audioCtx;
+            analyserRef.current = analyser;
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            const updateVisualizer = () => {
+              if (isRecognizingRef.current && analyserRef.current) {
+                analyserRef.current.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                  sum += dataArray[i];
+                }
+                const average = sum / dataArray.length;
+                setAudioLevel(Math.min(1, average / 128));
+                animFrameRef.current = requestAnimationFrame(updateVisualizer);
+              }
+            };
+            updateVisualizer();
+          })
+          .catch((err) => {
+            console.warn('Mic audio level capture optional fallback:', err);
+          });
+      }
+    } catch (e) {
+      console.error('Failed to initialize speech recognition:', e);
+      setErrorMessage('No se pudo iniciar el reconocimiento de voz.');
+      setState('idle');
     }
-  }, [isSpeechRecognitionSupported, startAudioCapture, stopAudioCapture, stopSpeaking]);
+  }, [isSpeechRecognitionSupported, stopSpeaking]);
 
-  // Spacebar keyboard listener
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input or textarea
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
-      ) {
-        return;
-      }
-
-      if (e.code === 'Space') {
-        e.preventDefault();
-        toggleListening();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleListening]);
-
-  // Cleanup on unmount
+  // Clean up on unmount
   useEffect(() => {
     return () => {
-      stopAudioCapture();
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+      }
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close().catch(() => {});
+      }
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
     };
-  }, [stopAudioCapture]);
+  }, []);
 
-  const resetKnowledgeToDefault = () => {
-    setKnowledgeDoc(DEFAULT_KNOWLEDGE_DOC);
-  };
+  // Update knowledge document
+  const updateKnowledgeDoc = useCallback((doc: KnowledgeDocument) => {
+    setKnowledgeDoc(doc);
+  }, []);
 
-  const clearHistory = () => {
-    setMessages([]);
+  // Clear chat history
+  const clearChatHistory = useCallback(() => {
     stopSpeaking();
-  };
+    setMessages([
+      {
+        id: `welcome-${Date.now()}`,
+        role: 'assistant',
+        text: 'Bienvenido a tu centro comercial inteligente, ¿En que puedo ayudarte?',
+        timestamp: new Date(),
+        sourceType: 'directory',
+      },
+    ]);
+  }, [stopSpeaking]);
 
   return {
     state,
@@ -748,16 +755,18 @@ export function useVoiceAssistant() {
     messages,
     errorMessage,
     knowledgeDoc,
-    setKnowledgeDoc,
-    resetKnowledgeToDefault,
     voiceSettings,
-    setVoiceSettings,
     availableVoices,
     isSpeechRecognitionSupported,
     toggleListening,
-    stopSpeaking,
+    sendTextMessage: processQuery,
     processQuery,
-    clearHistory,
+    stopSpeaking,
     speakResponse,
+    updateVoiceSettings,
+    setVoiceSettings: updateVoiceSettings,
+    updateKnowledgeDoc,
+    clearChatHistory,
+    clearHistory: clearChatHistory,
   };
 }
