@@ -124,22 +124,50 @@ export default function App() {
             />
           </div>
 
-          {/* Status Hint */}
-          <div className="mt-6 text-center">
-            <p className="text-gray-400 text-xs sm:text-sm tracking-wide">
-              {isListening ? (
-                <span className="text-emerald-400 font-medium animate-pulse flex items-center justify-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  {liveTranscript ? `"${liveTranscript}"` : 'Escuchando... Habla ahora'}
-                </span>
-              ) : isProcessing ? (
-                <span className="text-cyan-400 font-medium animate-pulse">Pensando respuesta...</span>
-              ) : isSpeaking ? (
-                <span className="text-indigo-300 font-medium">Hablando respuesta...</span>
-              ) : (
-                <span className="text-gray-400">Toca el micrófono en el centro para hablar</span>
-              )}
-            </p>
+          {/* Status Hint & Live Transcription Banner */}
+          <div className="mt-6 text-center max-w-lg w-full px-4">
+            {isListening ? (
+              <div className="flex flex-col items-center gap-2.5 animate-fade-in">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs sm:text-sm font-medium shadow-lg backdrop-blur-md">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                  <span>{liveTranscript ? `"${liveTranscript}"` : 'Escuchando tu voz... Habla ahora'}</span>
+                </div>
+                {liveTranscript && (
+                  <button
+                    type="button"
+                    onClick={toggleListening}
+                    className="mt-1 px-4 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-semibold tracking-wide transition-all shadow-md cursor-pointer hover:scale-105"
+                  >
+                    ✓ Enviar pregunta ahora
+                  </button>
+                )}
+              </div>
+            ) : isProcessing ? (
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs sm:text-sm font-medium animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                <span>Consultando información...</span>
+              </div>
+            ) : isSpeaking ? (
+              <button
+                type="button"
+                onClick={stopSpeaking}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs sm:text-sm font-medium transition-all cursor-pointer"
+                title="Haz clic para pausar"
+              >
+                <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+                <span>Respondiendo por voz (clic para pausar)</span>
+              </button>
+            ) : (
+              <p className="text-gray-400 text-xs sm:text-sm tracking-wide">
+                Toca el micrófono en el centro o presiona <kbd className="px-2 py-0.5 rounded bg-white/10 text-white font-mono text-[10px]">Espacio</kbd> para hablar
+              </p>
+            )}
+
+            {errorMessage && (
+              <p className="mt-3 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-xl">
+                {errorMessage}
+              </p>
+            )}
           </div>
 
           {/* Suggested Queries */}

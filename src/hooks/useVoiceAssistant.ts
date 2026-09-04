@@ -142,69 +142,49 @@ export function useVoiceAssistant() {
   const findBestSpanishVoice = (voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined => {
     if (!voices || voices.length === 0) return undefined;
 
-    const spanishVoices = voices.filter((v) => 
-      v.lang.toLowerCase().startsWith('es') || 
-      v.lang.toLowerCase().includes('419') || 
-      v.lang.toLowerCase().includes('mx') ||
-      v.lang.toLowerCase().includes('us') ||
-      v.lang.toLowerCase().includes('co') ||
-      v.lang.toLowerCase().includes('ve') ||
-      v.lang.toLowerCase().includes('ar') ||
-      v.lang.toLowerCase().includes('cl')
-    );
+    // Strictly filter for Spanish voices and discard English/foreign synthesizers
+    const spanishVoices = voices.filter((v) => {
+      const l = v.lang.toLowerCase();
+      const n = v.name.toLowerCase();
+      const isSpanish = l.startsWith('es') || l.includes('spa') || n.includes('spanish') || n.includes('español');
+      const isEnglish = n.includes('english') || (l.startsWith('en') && !n.includes('spanish'));
+      return isSpanish && !isEnglish;
+    });
 
-    const targetList = spanishVoices.length > 0 ? spanishVoices : voices;
+    const candidateList = spanishVoices.length > 0 ? spanishVoices : voices.filter(v => v.lang.toLowerCase().startsWith('es'));
+    if (candidateList.length === 0) return undefined;
 
     const scoreVoice = (v: SpeechSynthesisVoice): number => {
       let score = 0;
       const name = v.name.toLowerCase();
       const lang = v.lang.toLowerCase();
 
-      // Top priority 1: Latin American Spanish regions
-      if (lang.includes('419') || lang.includes('mx') || lang.includes('us') || lang.includes('co') || lang.includes('ve') || lang.includes('ar') || lang.includes('cl') || lang.includes('pe')) {
-        score += 150;
-      }
+      // Priority 1: Latin American Spanish specific dialects
+      if (lang === 'es-mx' || lang === 'es_mx') score += 180;
+      if (lang.includes('419') || lang.includes('co') || lang.includes('ve') || lang.includes('ar') || lang.includes('cl') || lang.includes('pe')) score += 160;
+      if (lang === 'es-us' && (name.includes('natural') || name.includes('online') || name.includes('google'))) score += 140;
 
-      // Top priority 2: Modern Natural / Neural / Online voices
+      // Priority 2: Google & Microsoft Natural/Neural Latin voices
+      if (name.includes('google español') || name.includes('google spanish')) score += 150;
+      if (name.includes('dalia') || name.includes('jorge') || name.includes('sabina') || name.includes('salome') || name.includes('gonzalo') || name.includes('paulina')) score += 140;
       if (name.includes('natural') || name.includes('online')) score += 120;
       if (name.includes('neural')) score += 110;
       if (name.includes('enhanced') || name.includes('premium')) score += 90;
-      if (name.includes('google')) score += 80;
-      if (name.includes('microsoft')) score += 75;
-      if (name.includes('apple') || name.includes('siri')) score += 70;
+      if (name.includes('apple') || name.includes('siri') || name.includes('monica') || name.includes('sofia')) score += 80;
 
-      // Well-known natural human-modeled Latin voices
-      if (
-        name.includes('dalia') ||
-        name.includes('sabina') ||
-        name.includes('salome') ||
-        name.includes('jorge') ||
-        name.includes('gonzalo') ||
-        name.includes('paulina') ||
-        name.includes('diego') ||
-        name.includes('luciana') ||
-        name.includes('sofia') ||
-        name.includes('mia') ||
-        name.includes('alvaro') ||
-        name.includes('carlos')
-      ) {
-        score += 60;
-      }
-
-      // Penalize legacy robotic desktop synthesizers & non-Latin voices if Latin is available
+      // Penalize robotic synthesizers or non-Latin
       if (name.includes('desktop') || name.includes('espeak') || name.includes('compact') || name.includes('synthesizer')) {
-        score -= 50;
+        score -= 60;
       }
 
-      // Lower priority for Spain accent if user asked for Latin American Spanish
       if (lang === 'es-es') {
-        score -= 20;
+        score += 30; // Spanish from Spain is better than English fallback, but lower than Latin
       }
 
       return score;
     };
 
-    const sorted = [...targetList].sort((a, b) => scoreVoice(b) - scoreVoice(a));
+    const sorted = [...candidateList].sort((a, b) => scoreVoice(b) - scoreVoice(a));
     return sorted[0];
   };
 
@@ -218,14 +198,14 @@ export function useVoiceAssistant() {
         setAvailableVoices(voices);
         const bestVoice = findBestSpanishVoice(voices);
 
-        if (bestVoice && !voiceSettings.voiceURI) {
+        if (bestVoice) {
           setVoiceSettings((prev) => ({
             ...prev,
             voiceURI: bestVoice.voiceURI,
             voiceName: bestVoice.name,
             voiceLang: bestVoice.lang,
             rate: 0.98,
-            pitch: 1.02,
+            pitch: 1.0,
           }));
         }
       }
@@ -233,7 +213,7 @@ export function useVoiceAssistant() {
 
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
-  }, [voiceSettings.voiceURI]);
+  }, []);
 
   // Cleanup audio tracks
   const stopAudioCapture = useCallback(() => {
@@ -252,47 +232,54 @@ export function useVoiceAssistant() {
     setAudioLevel(0);
   }, []);
 
-  // Setup live audio visualizer for mic
+  // Audio level simulator & optional visualizer
   const startAudioCapture = useCallback(async () => {
     try {
-      stopAudioCapture();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
+        if (stream) {
+          mediaStreamRef.current = stream;
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContextClass) {
+            const ctx = new AudioContextClass();
+            audioContextRef.current = ctx;
+            const analyser = ctx.createAnalyser();
+            analyser.fftSize = 64;
+            analyserRef.current = analyser;
 
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      audioContextRef.current = audioCtx;
+            const source = ctx.createMediaStreamSource(stream);
+            source.connect(analyser);
 
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.8;
-      analyserRef.current = analyser;
-
-      const source = audioCtx.createMediaStreamSource(stream);
-      source.connect(analyser);
-
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-
-      const checkAudio = () => {
-        if (!analyserRef.current) return;
-        analyserRef.current.getByteFrequencyData(dataArray);
-        
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          sum += dataArray[i];
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            const updateVisual = () => {
+              if (stateRef.current !== 'listening') return;
+              analyser.getByteFrequencyData(dataArray);
+              let sum = 0;
+              for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+              }
+              const avg = sum / dataArray.length;
+              setAudioLevel(Math.min(1, Math.max(0.15, avg / 128)));
+              animFrameRef.current = requestAnimationFrame(updateVisual);
+            };
+            updateVisual();
+            return;
+          }
         }
-        const avg = sum / bufferLength;
-        const normalized = Math.min(1, avg / 80); // scale 0 to 1
-        setAudioLevel(normalized);
-
-        animFrameRef.current = requestAnimationFrame(checkAudio);
-      };
-
-      checkAudio();
-    } catch (err) {
-      console.warn('Microphone stream access not granted for visualization:', err);
+      }
+    } catch (e) {
+      console.warn('Audio visualization fallback:', e);
     }
-  }, [stopAudioCapture]);
+
+    // Fallback pulse if AudioContext is unavailable
+    const interval = setInterval(() => {
+      if (stateRef.current !== 'listening') {
+        clearInterval(interval);
+        return;
+      }
+      setAudioLevel(0.25 + Math.random() * 0.45);
+    }, 120);
+  }, []);
 
   // Stop current AI speaking voice
   const stopSpeaking = useCallback(() => {
@@ -331,22 +318,25 @@ export function useVoiceAssistant() {
     const utterance = new SpeechSynthesisUtterance(cleanText);
     currentUtteranceRef.current = utterance;
 
-    // Pick configured voice or best available Spanish voice
-    const selectedVoice = availableVoices.find((v) => v.voiceURI === voiceSettings.voiceURI) || findBestSpanishVoice(availableVoices);
+    // Dynamically retrieve fresh voices from browser in case they loaded late
+    const currentVoices = window.speechSynthesis.getVoices();
+    const voicePool = currentVoices.length > 0 ? currentVoices : availableVoices;
+    const selectedVoice = voicePool.find((v) => v.voiceURI === voiceSettings.voiceURI) || findBestSpanishVoice(voicePool);
+
     if (selectedVoice) {
       utterance.voice = selectedVoice;
       utterance.lang = selectedVoice.lang;
     } else {
-      utterance.lang = 'es-419';
+      utterance.lang = 'es-MX';
     }
 
     utterance.rate = voiceSettings.rate || 0.98;
-    utterance.pitch = voiceSettings.pitch || 1.02;
+    utterance.pitch = voiceSettings.pitch || 1.0;
     utterance.volume = voiceSettings.volume;
 
     utterance.onstart = () => {
       setState('speaking');
-      // Simulate pulsating audio levels during speech
+      // Pulsating audio levels during speech
       const pulseInterval = setInterval(() => {
         if (stateRef.current !== 'speaking') {
           clearInterval(pulseInterval);
@@ -376,8 +366,16 @@ export function useVoiceAssistant() {
       currentUtteranceRef.current = null;
     };
 
-    window.speechSynthesis.speak(utterance);
-  }, [availableVoices, voiceSettings]);
+    // Small delay to ensure synthesis queue is cleared
+    setTimeout(() => {
+      try {
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        console.error('Failed to trigger speech synthesis:', err);
+        setState('idle');
+      }
+    }, 50);
+  }, [availableVoices, voiceSettings, findBestSpanishVoice]);
 
   // Auto-speak welcome greeting when app starts
   const hasSpokenWelcomeRef = useRef(false);
@@ -542,9 +540,14 @@ export function useVoiceAssistant() {
       const recognition = new SpeechRec();
       recognitionRef.current = recognition;
 
-      // Configure Speech Recognition for Latin American Spanish
-      const userBrowserLang = typeof navigator !== 'undefined' ? navigator.language : 'es-419';
-      recognition.lang = userBrowserLang.startsWith('es') ? userBrowserLang : 'es-419';
+      // Configure Speech Recognition for Latin American Spanish (es-MX is the standard Latin American dialect recognized by all browsers)
+      const userBrowserLang = typeof navigator !== 'undefined' ? (navigator.language || '').toLowerCase() : '';
+      if (userBrowserLang.startsWith('es') && userBrowserLang !== 'es-419') {
+        recognition.lang = userBrowserLang;
+      } else {
+        recognition.lang = 'es-MX';
+      }
+
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
@@ -570,7 +573,7 @@ export function useVoiceAssistant() {
           latestTranscriptRef.current = currentText;
           setLiveTranscript(currentText);
 
-          // Reset silence debounce timer (1.2s of quiet after speaking auto-submits)
+          // Reset silence debounce timer (900ms of quiet after speaking auto-submits)
           if (silenceTimeoutRef.current) {
             clearTimeout(silenceTimeoutRef.current);
           }
@@ -584,24 +587,24 @@ export function useVoiceAssistant() {
               stopAudioCapture();
               processQueryRef.current(textToSend);
             }
-          }, 1200);
+          }, 950);
         }
       };
 
       recognition.onerror = (event: any) => {
-        console.warn('Speech recognition event:', event.error);
+        console.warn('Speech recognition status:', event.error);
         if (silenceTimeoutRef.current) {
           clearTimeout(silenceTimeoutRef.current);
           silenceTimeoutRef.current = null;
         }
 
-        if (event.error === 'not-allowed') {
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
           isRecognizingRef.current = false;
           stopAudioCapture();
-          setErrorMessage('Permiso de micrófono denegado. Permite el acceso para hablar.');
+          setErrorMessage('Permiso de micrófono no otorgado. Por favor permite el acceso al micrófono.');
           setState('error');
         } else if (event.error === 'no-speech') {
-          // If no speech was detected yet, don't crash, keep listening or gracefully stop
+          // Keep listening or if user finished, process
           if (!latestTranscriptRef.current.trim()) {
             isRecognizingRef.current = false;
             stopAudioCapture();
