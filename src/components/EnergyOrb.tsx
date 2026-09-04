@@ -21,6 +21,20 @@ interface Particle {
   alpha: number;
 }
 
+interface FloatingAmbientParticle {
+  angle: number;
+  distance: number;
+  baseDistance: number;
+  speed: number;
+  radialSpeed: number;
+  size: number;
+  opacity: number;
+  pulseSpeed: number;
+  pulsePhase: number;
+  zDepth: number; // -1 (far back) to +1 (front layer)
+  colorType: 'cyan' | 'indigo' | 'emerald' | 'white' | 'purple' | 'amber';
+}
+
 interface OrbitalRing {
   radiusX: number;
   radiusY: number;
@@ -89,6 +103,32 @@ export const EnergyOrb: React.FC<EnergyOrbProps> = ({
       { radiusX: 90, radiusY: 60, rotation: 2.5, rotationSpeed: -0.008, tilt: 0.55, phase: 1.8, color: 'rgba(59, 130, 246, 0.7)', width: 1.7, eccentricity: 0.82 },
       { radiusX: 140, radiusY: 62, rotation: -0.9, rotationSpeed: 0.006, tilt: -0.15, phase: 3.8, color: 'rgba(191, 219, 254, 0.5)', width: 1.0, eccentricity: 0.65 }
     ];
+
+    // Smooth ambient floating particles surrounding the orb in 3D orbit
+    const ambientParticles: FloatingAmbientParticle[] = [];
+    const NUM_AMBIENT_PARTICLES = 48;
+    const colorTypes: Array<'cyan' | 'indigo' | 'emerald' | 'white' | 'purple' | 'amber'> = [
+      'cyan', 'cyan', 'indigo', 'white', 'purple', 'cyan', 'indigo', 'emerald', 'white', 'amber', 'purple', 'cyan'
+    ];
+
+    for (let i = 0; i < NUM_AMBIENT_PARTICLES; i++) {
+      const angle = (i / NUM_AMBIENT_PARTICLES) * Math.PI * 2 + (Math.random() * 0.4 - 0.2);
+      const baseDist = 72 + Math.random() * 98; // between 72px and 170px from center
+      const zDepth = -1 + (i / NUM_AMBIENT_PARTICLES) * 2; // -1 (background) to +1 (foreground)
+      ambientParticles.push({
+        angle,
+        distance: baseDist,
+        baseDistance: baseDist,
+        speed: (0.003 + Math.random() * 0.007) * (i % 2 === 0 ? 1 : -1),
+        radialSpeed: 0.015 + Math.random() * 0.02,
+        size: 1.2 + Math.random() * 2.6,
+        opacity: 0.35 + Math.random() * 0.55,
+        pulseSpeed: 0.02 + Math.random() * 0.03,
+        pulsePhase: Math.random() * Math.PI * 2,
+        zDepth,
+        colorType: colorTypes[i % colorTypes.length],
+      });
+    }
 
     // Plasma discharge particles
     const particles: Particle[] = [];
@@ -171,7 +211,116 @@ export const EnergyOrb: React.FC<EnergyOrbProps> = ({
       ctx.arc(cx, cy, maxAuraRadius, 0, Math.PI * 2);
       ctx.fill();
 
-      // 2. ORBITAL MAGNETIC FLUX RINGS
+      // 2. SMOOTH AMBIENT FLOATING PARTICLES (SURROUNDING ATMOSPHERE WITH AUDIO REACTIVITY)
+      ctx.save();
+
+      // Acoustic harmonic soundwaves that pulse outwards with voice audioLevel
+      if ((curState === 'speaking' || curState === 'listening') && curAudio > 0.12) {
+        const waveCount = 3;
+        for (let w = 0; w < waveCount; w++) {
+          const wavePhase = (time * 2.2 + (w / waveCount)) % 1;
+          const waveRadius = (baseRadius + wavePhase * (115 * scale)) * (1 + curAudio * 0.3);
+          const waveAlpha = (1 - wavePhase) * (curAudio * 0.38);
+
+          ctx.beginPath();
+          ctx.arc(cx, cy, waveRadius, 0, Math.PI * 2);
+          ctx.lineWidth = (1.5 + (1 - wavePhase) * 2.5) * scale;
+          ctx.strokeStyle = curState === 'listening'
+            ? `rgba(52, 211, 153, ${waveAlpha})`
+            : `rgba(56, 189, 248, ${waveAlpha})`;
+          ctx.stroke();
+        }
+      }
+
+      ambientParticles.forEach((ap, idx) => {
+        // Orbit angle update with audio acceleration during speech
+        const audioSpeedSurge = curState === 'speaking' ? Math.sign(ap.speed) * (curAudio * 0.016) : 0;
+        ap.angle += (ap.speed + audioSpeedSurge) * speedMultiplier;
+        
+        // Dynamic radial expansion: particles bloom outward with louder speech
+        const radialWobble = Math.sin(time * 1.5 + ap.pulsePhase) * 12 * scale;
+        const audioDisplacement = curState === 'speaking'
+          ? curAudio * (0.35 + (ap.zDepth + 1) * 0.22)
+          : curAudio * 0.2;
+        const currentDist = (ap.baseDistance + radialWobble) * scale * (1 + audioDisplacement);
+
+        // 3D perspective flattening and depth offset
+        const depthPerspective = 0.72 + (ap.zDepth + 1) * 0.14;
+        const px = cx + Math.cos(ap.angle) * currentDist;
+        const py = cy + Math.sin(ap.angle) * (currentDist * depthPerspective);
+
+        // Dynamic size and glow radiance scaling with audio volume
+        const depthScale = 0.8 + (ap.zDepth + 1) * 0.2;
+        const audioSizeBoost = curState === 'speaking' ? (1 + curAudio * 0.85) : (1 + curAudio * 0.35);
+        const particleSize = ap.size * scale * depthScale * audioSizeBoost;
+
+        // Breathing opacity + Audio luminosity flash on vocal peaks
+        const pulse = 0.5 + 0.5 * Math.sin(time * 2.5 + ap.pulsePhase);
+        const audioGlowBoost = curState === 'speaking' ? (1 + curAudio * 0.7) : 1.0;
+        const particleAlpha = Math.min(1, ap.opacity * (0.6 + 0.4 * pulse) * audioGlowBoost);
+
+        // Dynamic particle coloring according to state & type
+        let baseColor = 'rgba(56, 189, 248,'; // cyan default
+        let haloColor = 'rgba(14, 165, 233,';
+
+        if (curState === 'listening') {
+          baseColor = idx % 2 === 0 ? 'rgba(52, 211, 153,' : 'rgba(110, 231, 183,';
+          haloColor = 'rgba(16, 185, 129,';
+        } else if (curState === 'processing') {
+          baseColor = 'rgba(147, 197, 253,';
+          haloColor = 'rgba(99, 102, 241,';
+        } else if (curState === 'error') {
+          baseColor = 'rgba(248, 113, 113,';
+          haloColor = 'rgba(239, 68, 68,';
+        } else {
+          switch (ap.colorType) {
+            case 'indigo':
+              baseColor = 'rgba(129, 140, 248,';
+              haloColor = 'rgba(99, 102, 241,';
+              break;
+            case 'purple':
+              baseColor = 'rgba(192, 132, 252,';
+              haloColor = 'rgba(168, 85, 247,';
+              break;
+            case 'amber':
+              baseColor = 'rgba(251, 191, 36,';
+              haloColor = 'rgba(245, 158, 11,';
+              break;
+            case 'white':
+              baseColor = 'rgba(255, 255, 255,';
+              haloColor = 'rgba(186, 230, 253,';
+              break;
+            case 'emerald':
+              baseColor = 'rgba(52, 211, 153,';
+              haloColor = 'rgba(16, 185, 129,';
+              break;
+            default:
+              baseColor = 'rgba(56, 189, 248,';
+              haloColor = 'rgba(14, 165, 233,';
+          }
+        }
+
+        // Soft outer glow halo - expands exponentially during audio peaks
+        const haloRadius = particleSize * (3.5 + (curState === 'speaking' ? curAudio * 3.0 : 0));
+        const haloGrad = ctx.createRadialGradient(px, py, 0, px, py, haloRadius);
+        haloGrad.addColorStop(0, `${baseColor} ${Math.min(1, particleAlpha * 0.9)})`);
+        haloGrad.addColorStop(0.35, `${haloColor} ${Math.min(1, particleAlpha * 0.45)})`);
+        haloGrad.addColorStop(1, `${haloColor} 0)`);
+
+        ctx.fillStyle = haloGrad;
+        ctx.beginPath();
+        ctx.arc(px, py, haloRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Incandescent particle core
+        ctx.fillStyle = `${baseColor} ${Math.min(1, particleAlpha * 0.98)})`;
+        ctx.beginPath();
+        ctx.arc(px, py, particleSize, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+
+      // 3. ORBITAL MAGNETIC FLUX RINGS
       ctx.save();
       rings.forEach((ring, idx) => {
         ring.rotation += ring.rotationSpeed * speedMultiplier;

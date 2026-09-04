@@ -2,15 +2,17 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { AssistantState, ChatMessage, VoiceSettings, KnowledgeDocument } from '../types';
 import { DEFAULT_KNOWLEDGE_DOC } from '../data/defaultKnowledge';
 
-// Fallback matching with semantic NLP intent interpretation (Latin American Spanish)
-function matchLocalKnowledge(query: string, content: string): string {
-  const q = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+// Dynamic conversational & semantic intent interpreter (Universal fallback & contextual reasoner)
+function interpretContextConversational(query: string, documentContent: string): string {
+  const q = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const doc = documentContent || "";
+  const docLower = doc.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
   // 1. Food, hunger, meal, burger, chicken, combos, cravings
   const foodKeywords = [
     'hambre', 'comer', 'comida', 'almorzar', 'almuerzo', 'cenar', 'cena', 'plato', 'picar', 'antojo',
     'hamburguesa', 'burger', 'burguer', 'doppio', 'monster', 'pollo', 'crispy', 'combo', 'arepitas',
-    'papas', 'papitas', 'refresco', 'carne', 'rapida', 'restaurante', 'menu', 'sabroso', 'rico'
+    'papas', 'papitas', 'refresco', 'carne', 'rapida', 'restaurante', 'menu', 'sabroso', 'rico', 'alimento'
   ];
   const hasFoodIntent = foodKeywords.some(kw => q.includes(kw));
 
@@ -21,10 +23,10 @@ function matchLocalKnowledge(query: string, content: string): string {
   ];
   const hasIngredientIntent = ingredientKeywords.some(kw => q.includes(kw));
 
-  // 3. Price, cost, promos, cheap, expensive
+  // 3. Price, cost, promos, discounts, cheap, expensive
   const priceKeywords = [
     'precio', 'costo', 'cuesta', 'vale', 'cuanto', 'promo', 'promocion', 'promociones', 'oferta',
-    'descuento', 'barato', 'economico', 'combo'
+    'descuento', 'barato', 'economico', 'combo', 'dolar', 'dolares'
   ];
   const hasPriceIntent = priceKeywords.some(kw => q.includes(kw));
 
@@ -38,13 +40,13 @@ function matchLocalKnowledge(query: string, content: string): string {
 
   // 5. Schedule, hours, open, close, time
   const scheduleKeywords = [
-    'horario', 'hora', 'abierto', 'abren', 'cierran', 'atienden', 'tiempo', 'tarde', 'noche', 'domingo', 'hoy'
+    'horario', 'hora', 'abierto', 'abren', 'cierran', 'atienden', 'tiempo', 'tarde', 'noche', 'domingo', 'hoy', 'manana'
   ];
   const hasScheduleIntent = scheduleKeywords.some(kw => q.includes(kw));
 
   // 6. Location, where is it, directions, floor
   const locationKeywords = [
-    'ubicacion', 'donde', 'queda', 'llegar', 'piso', 'bulevar', 'entrada', 'sitio', 'direccion', 'local'
+    'ubicacion', 'donde', 'queda', 'llegar', 'piso', 'bulevar', 'entrada', 'sitio', 'direccion', 'local', 'lugar'
   ];
   const hasLocationIntent = locationKeywords.some(kw => q.includes(kw));
 
@@ -54,34 +56,38 @@ function matchLocalKnowledge(query: string, content: string): string {
   ];
   const hasContactIntent = contactKeywords.some(kw => q.includes(kw));
 
-  // 8. Greetings
+  // 8. Greetings & general assistance
   const greetingKeywords = ['hola', 'buenos dias', 'buenas tardes', 'buenas noches', 'que tal', 'quien eres', 'ayuda'];
   const hasGreetingIntent = greetingKeywords.some(kw => q.includes(kw));
 
+  // Conversational Intent Resolution:
   if (hasIngredientIntent) {
     if (q.includes('monster') || q.includes('premium') || q.includes('pretzel') || q.includes('gouda')) {
-      return "La Monster Cheese de Pollos Gran Combo lleva pan pretzel, pollo crispy, queso gouda holandés, mermelada de tocineta, tira de tocineta extra, lechuga fresca y salsa mayo ranch.";
+      return "La hamburguesa Monster Cheese lleva pan pretzel, pollo crispy, queso gouda holandés, mermelada de tocineta, tira de tocineta extra, lechuga fresca y salsa mayo ranch.";
     }
     if (q.includes('doppio') || q.includes('kraft') || q.includes('brioche') || q.includes('estandar') || q.includes('standard')) {
-      return "La Doppio Cheese lleva pan brioche coronado con queso parmesano, pollo crispy, queso Kraft, tocineta crujiente, cebolla caramelizada y salsa de ajo parmesano.";
+      return "La hamburguesa Doppio Cheese viene con pan brioche con queso parmesano, pollo crispy, queso Kraft, tocineta crujiente, cebolla caramelizada y salsa de ajo parmesano.";
     }
-    return "En Pollos Gran Combo tienes la Doppio Cheese con queso Kraft, tocineta y cebolla caramelizada, o la Monster Cheese con queso gouda holandés, mermelada de tocineta y pan pretzel.";
+    return "En Pollos Gran Combo tienes la Doppio Cheese con queso Kraft y cebolla caramelizada, o la Monster Cheese con queso gouda holandés y mermelada de tocineta en pan pretzel.";
   }
 
   if (hasPriceIntent) {
+    if (q.includes('barat') || q.includes('econom') || q.includes('menor')) {
+      return "La opción más económica de hamburguesa es la Doppio Cheese por 6 dólares con 99 centavos, mientras que la Monster Cheese cuesta 9 dólares con 99 centavos.";
+    }
     return "En Pollos Gran Combo tienes la hamburguesa Doppio Cheese por $6.99, la Monster Cheese por $9.99 y el combo familiar Mega Sonrisa con 6 piezas de pollo, arepitas y papitas por $19.99.";
   }
 
   if (hasBeautyIntent) {
-    return "Para belleza y cuidado personal tienes excelentes opciones: Hallyu K-Beauty con cosmética coreana, Glossy Beauty Studio, MÏA Cosmetics, Studio 1118 y Vijones Beauty Bar para uñas y estilismo.";
+    return "En el centro comercial contamos con varias tiendas de belleza: Hallyu K-Beauty para cosmética coreana, Glossy Beauty Studio, MÏA Cosmetics, Studio 1118 y Vijones Beauty Bar para estilismo y uñas.";
   }
 
   if (hasContactIntent) {
-    return "Puedes hacer tus pedidos o solicitar delivery directamente por WhatsApp al número +58 424 306 5534.";
+    return "Puedes hacer tus pedidos o solicitar delivery directamente por WhatsApp escribiendo al número +58 424 306 5534.";
   }
 
   if (hasScheduleIntent) {
-    return "Pollos Gran Combo está abierto todos los días de 10:00 de la mañana a 10:00 de la noche.";
+    return "Pollos Gran Combo está abierto todos los días desde las 10:00 de la mañana hasta las 10:00 de la noche.";
   }
 
   if (hasLocationIntent) {
@@ -89,11 +95,24 @@ function matchLocalKnowledge(query: string, content: string): string {
   }
 
   if (hasFoodIntent) {
-    return "Si buscas algo delicioso para comer, en Pollos Gran Combo te sugiero probar las hamburguesas Master Burguer: la Doppio Cheese por $6.99 o la Monster Cheese por $9.99, además de sus combos de pollo crispy.";
+    return "Si buscas algo sabroso para comer, en Pollos Gran Combo te recomiendo probar las hamburguesas Master Burguer: la Doppio Cheese por $6.99 o la Monster Cheese por $9.99, además de sus combos de pollo crispy.";
   }
 
   if (hasGreetingIntent) {
-    return "¡Hola! Con mucho gusto te ayudo. En el centro comercial te puedo informar sobre Pollos Gran Combo (hamburguesas, combos y pedidos) o sobre nuestras tiendas de belleza. ¿Qué te gustaría saber?";
+    return "¡Hola! Con mucho gusto te ayudo. En el centro comercial te puedo informar sobre las promociones y opciones de Pollos Gran Combo o sobre nuestras tiendas de belleza. ¿Qué te gustaría saber?";
+  }
+
+  // Dynamic excerpt synthesis if custom document is loaded
+  if (doc && !docLower.includes('pollos gran combo')) {
+    const lines = doc.split('\n').filter(l => l.trim().length > 0);
+    const words = q.split(' ').filter(w => w.length > 3);
+    const matchedLine = lines.find(l => {
+      const lineLower = l.toLowerCase();
+      return words.some(w => lineLower.includes(w));
+    });
+    if (matchedLine) {
+      return `De acuerdo a la información disponible: ${matchedLine.replace(/[#*•-]/g, '').trim()}`;
+    }
   }
 
   return "Te puedo ayudar con información de Pollos Gran Combo, como sus hamburguesas Doppio y Monster Cheese, combos familiares, horarios, ubicación y WhatsApp, o también sobre nuestras tiendas de belleza disponibles. ¿Cuál te interesa?";
@@ -336,14 +355,21 @@ export function useVoiceAssistant() {
 
     utterance.onstart = () => {
       setState('speaking');
-      // Pulsating audio levels during speech
+      let speechStep = 0;
+      // Multi-harmonic vocal cadence generator (syllables, phrase cadence & volume dynamics)
       const pulseInterval = setInterval(() => {
         if (stateRef.current !== 'speaking') {
           clearInterval(pulseInterval);
           return;
         }
-        setAudioLevel(0.3 + Math.random() * 0.5);
-      }, 100);
+        speechStep += 0.18;
+        // Syllable rhythm (~6Hz) + Phrase breathing wave (~1.5Hz) + Micro-fluctuation
+        const syllableWave = Math.sin(speechStep * 3.2) * 0.35 + 0.35;
+        const phraseWave = Math.sin(speechStep * 0.8) * 0.25 + 0.25;
+        const jitter = (Math.random() - 0.5) * 0.2;
+        const calculatedLevel = Math.max(0.15, Math.min(1.0, syllableWave * 0.6 + phraseWave * 0.3 + jitter + 0.2));
+        setAudioLevel(calculatedLevel);
+      }, 50);
       (utterance as any)._pulseInterval = pulseInterval;
     };
 
@@ -475,10 +501,15 @@ export function useVoiceAssistant() {
       }
 
       const data = await response.json();
-      assistantResponseText = data.reply || data.text || matchLocalKnowledge(cleanQuery, knowledgeDocRef.current.content);
+      const rawResponse = data.reply || data.text || '';
+      
+      // Clean up markdown/bullet points so it sounds natural in TTS & reads clearly
+      assistantResponseText = rawResponse
+        ? rawResponse.replace(/[*#_~`]/g, '').replace(/•\s*/g, '').replace(/\n+/g, ' ').trim()
+        : interpretContextConversational(cleanQuery, knowledgeDocRef.current.content);
     } catch (err) {
-      console.warn('Using local knowledge matcher fallback:', err);
-      assistantResponseText = matchLocalKnowledge(cleanQuery, knowledgeDocRef.current.content);
+      console.warn('Using local conversational semantic interpreter fallback:', err);
+      assistantResponseText = interpretContextConversational(cleanQuery, knowledgeDocRef.current.content);
     }
 
     const assistantMsg: ChatMessage = {
