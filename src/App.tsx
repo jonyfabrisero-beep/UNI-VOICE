@@ -15,6 +15,7 @@ export default function App() {
     voiceSettings,
     setVoiceSettings,
     toggleListening,
+    submitCurrentVoiceQuery,
     stopSpeaking,
     processQuery,
     clearHistory,
@@ -22,6 +23,23 @@ export default function App() {
   } = useVoiceAssistant();
 
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Keyboard shortcut: Space toggles microphone when not typing in an input
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+        if (activeTag === 'input' || activeTag === 'textarea') {
+          return;
+        }
+        e.preventDefault();
+        toggleListening();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleListening]);
 
   // Auto-open chat view as soon as user asks a query or processing begins
   useEffect(() => {
@@ -135,10 +153,10 @@ export default function App() {
                 {liveTranscript && (
                   <button
                     type="button"
-                    onClick={toggleListening}
-                    className="mt-1 px-4 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-semibold tracking-wide transition-all shadow-md cursor-pointer hover:scale-105"
+                    onClick={submitCurrentVoiceQuery}
+                    className="mt-1 px-4 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-semibold tracking-wide transition-all shadow-md cursor-pointer hover:scale-105 flex items-center gap-1.5"
                   >
-                    ✓ Enviar pregunta ahora
+                    <span>✓ Enviar pregunta ahora</span>
                   </button>
                 )}
               </div>

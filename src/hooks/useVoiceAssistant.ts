@@ -555,6 +555,28 @@ export function useVoiceAssistant() {
   }, [speakResponse, stopSpeaking]);
 
   processQueryRef.current = processQuery;
+  const isSubmittingRef = useRef<boolean>(false);
+  const hasSpokenRef = useRef<boolean>(false);
+
+  // Direct submit for current voice transcript
+  const submitCurrentVoiceQuery = useCallback(() => {
+    const query = latestTranscriptRef.current.trim();
+    if (!query || isSubmittingRef.current) return;
+
+    isSubmittingRef.current = true;
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+    }
+    isRecognizingRef.current = false;
+    processQueryRef.current(query);
+  }, []);
 
   // Toggle voice recognition
   const toggleListening = useCallback(() => {
@@ -563,7 +585,28 @@ export function useVoiceAssistant() {
       return;
     }
 
+    // If already listening, check if user spoke something:
     if (isRecognizingRef.current || stateRef.current === 'listening') {
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+        silenceTimeoutRef.current = null;
+      }
+
+      const pendingText = latestTranscriptRef.current.trim();
+      // If user spoke something, submit it immediately upon tapping mic again!
+      if (pendingText && !isSubmittingRef.current) {
+        isSubmittingRef.current = true;
+        if (recognitionRef.current) {
+          try {
+            recognitionRef.current.stop();
+          } catch (e) {}
+        }
+        isRecognizingRef.current = false;
+        processQueryRef.current(pendingText);
+        return;
+      }
+
+      // If user tapped to cancel without speaking:
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -573,6 +616,7 @@ export function useVoiceAssistant() {
       }
       isRecognizingRef.current = false;
       setState('idle');
+      setAudioLevel(0);
       return;
     }
 
@@ -587,8 +631,12 @@ export function useVoiceAssistant() {
 
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'es-MX';
+      recognition.lang = voiceSettings.voiceLang || 'es-MX';
       recognition.maxAlternatives = 1;
+
+      isSubmittingRef.current = false;
+      hasSpokenRef.current = false;
+      latestTranscriptRef.current = '';
 
       recognition.onstart = () => {
         isRecognizingRef.current = true;
@@ -596,112 +644,115 @@ export function useVoiceAssistant() {
         setErrorMessage(null);
         setLiveTranscript('');
         latestTranscriptRef.current = '';
+        setAudioLevel(0.25);
       };
 
       recognition.onresult = (event: any) => {
-        let currentInterim = '';
-        let currentFinal = '';
+        let fullFinal = '';
+        let fullInterim = '';
 
-        for (let i = event.resultIndex; i < event.results.length; i++) {
+        for (let i = 0; i < event.results.length; i++) {
           const item = event.results[i];
           if (item.isFinal) {
-            currentFinal += item[0].transcript;
+            fullFinal += item[0].transcript + ' ';
           } else {
-            currentInterim += item[0].transcript;
+            fullInterim += item[0].transcript;
           }
         }
 
-        const combinedTranscript = (currentFinal || currentInterim).trim();
+        const combinedTranscript = (fullFinal + fullInterim).trim();
         if (combinedTranscript) {
+          hasSpokenRef.current = true;
           setLiveTranscript(combinedTranscript);
           latestTranscriptRef.current = combinedTranscript;
-        }
+          
+          // Lively reactive audio pulse as speech is recognized
+          setAudioLevel(0.45 + Math.random() * 0.45);
 
-        // Reset silence detection timeout (1.5s silence triggers query processing)
-        if (silenceTimeoutRef.current) {
-          clearTimeout(silenceTimeoutRef.current);
-        }
-
-        silenceTimeoutRef.current = setTimeout(() => {
-          const textToSend = latestTranscriptRef.current.trim();
-          if (textToSend) {
-            if (recognitionRef.current) {
-              try {
-                recognitionRef.current.stop();
-              } catch (e) {
-                // Ignore
-              }
-            }
-            isRecognizingRef.current = false;
-            processQueryRef.current(textToSend);
+          // Reset silence detection timeout on every new speech event
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
           }
-        }, 1500);
+
+          // Auto-submit after 1200ms of silence once speech is detected
+          silenceTimeoutRef.current = setTimeout(() => {
+            const textToSend = latestTranscriptRef.current.trim();
+            if (textToSend && !isSubmittingRef.current) {
+              isSubmittingRef.current = true;
+              if (recognitionRef.current) {
+                try {
+                  recognitionRef.current.stop();
+                } catch (e) {}
+              }
+              isRecognizingRef.current = false;
+              processQueryRef.current(textToSend);
+            }
+          }, 1200);
+        }
       };
 
       recognition.onerror = (event: any) => {
         console.warn('Speech recognition warning/error:', event.error);
-        if (event.error === 'no-speech') {
+        
+        // If the user already spoke and it was captured, prioritize answering it!
+        const pendingText = latestTranscriptRef.current.trim();
+        if (pendingText && !isSubmittingRef.current) {
+          isSubmittingRef.current = true;
+          if (recognitionRef.current) {
+            try {
+              recognitionRef.current.stop();
+            } catch (e) {}
+          }
+          isRecognizingRef.current = false;
+          processQueryRef.current(pendingText);
           return;
         }
-        if (event.error === 'not-allowed') {
-          setErrorMessage('Permiso de micrófono denegado. Permite el acceso para hablar.');
+
+        if (event.error === 'no-speech') {
+          setErrorMessage('No alcancé a escucharte. Toca el micrófono para hablar.');
+        } else if (event.error === 'not-allowed') {
+          setErrorMessage('Permiso de micrófono bloqueado. Por favor permite el acceso en tu navegador.');
+        } else if (event.error === 'network') {
+          setErrorMessage('El servicio de voz no respondió. Puedes escribir tu consulta en el chat.');
+        } else if (event.error === 'audio-capture') {
+          setErrorMessage('No se encontró micrófono disponible.');
         }
+
         isRecognizingRef.current = false;
-        setState('idle');
+        if (stateRef.current === 'listening') {
+          setState('idle');
+          setAudioLevel(0);
+        }
       };
 
       recognition.onend = () => {
         isRecognizingRef.current = false;
-        if (stateRef.current === 'listening') {
-          setState('idle');
+
+        // If text was recognized and hasn't been submitted yet, submit now!
+        const pendingText = latestTranscriptRef.current.trim();
+        if (pendingText && !isSubmittingRef.current) {
+          isSubmittingRef.current = true;
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+            silenceTimeoutRef.current = null;
+          }
+          processQueryRef.current(pendingText);
+        } else {
+          if (stateRef.current === 'listening') {
+            setState('idle');
+            setAudioLevel(0);
+          }
         }
       };
 
       recognitionRef.current = recognition;
       recognition.start();
-
-      // Audio visualizer setup via Web Audio API
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-          .then((stream) => {
-            mediaStreamRef.current = stream;
-            const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-            const audioCtx = new AudioCtx();
-            const analyser = audioCtx.createAnalyser();
-            const source = audioCtx.createMediaStreamSource(stream);
-
-            analyser.fftSize = 64;
-            analyser.smoothingTimeConstant = 0.8;
-            source.connect(analyser);
-
-            audioContextRef.current = audioCtx;
-            analyserRef.current = analyser;
-
-            const dataArray = new Uint8Array(analyser.frequencyBinCount);
-            const updateVisualizer = () => {
-              if (isRecognizingRef.current && analyserRef.current) {
-                analyserRef.current.getByteFrequencyData(dataArray);
-                let sum = 0;
-                for (let i = 0; i < dataArray.length; i++) {
-                  sum += dataArray[i];
-                }
-                const average = sum / dataArray.length;
-                setAudioLevel(Math.min(1, average / 128));
-                animFrameRef.current = requestAnimationFrame(updateVisualizer);
-              }
-            };
-            updateVisualizer();
-          })
-          .catch((err) => {
-            console.warn('Mic audio level capture optional fallback:', err);
-          });
-      }
     } catch (e) {
       console.error('Failed to initialize speech recognition:', e);
       setErrorMessage('No se pudo iniciar el reconocimiento de voz.');
       setState('idle');
     }
-  }, [isSpeechRecognitionSupported, stopSpeaking]);
+  }, [isSpeechRecognitionSupported, stopSpeaking, voiceSettings.voiceLang]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -759,6 +810,7 @@ export function useVoiceAssistant() {
     availableVoices,
     isSpeechRecognitionSupported,
     toggleListening,
+    submitCurrentVoiceQuery,
     sendTextMessage: processQuery,
     processQuery,
     stopSpeaking,
