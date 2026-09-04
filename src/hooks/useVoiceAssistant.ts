@@ -134,15 +134,27 @@ export function useVoiceAssistant() {
   const [knowledgeDoc, setKnowledgeDoc] = useState<KnowledgeDocument>(DEFAULT_KNOWLEDGE_DOC);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   
-  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>({
-    voiceURI: '',
-    voiceName: 'Voz en Español',
-    voiceLang: 'es-ES',
-    rate: 1.0,
-    pitch: 1.0,
-    volume: 1.0,
-    continuous: false,
-    autoSpeak: true,
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('uni_voice_settings');
+        if (saved) {
+          return JSON.parse(saved);
+        }
+      } catch (e) {
+        console.warn('Could not read voice settings from localStorage');
+      }
+    }
+    return {
+      voiceURI: '',
+      voiceName: 'Voz en Español',
+      voiceLang: 'es-MX',
+      rate: 0.98,
+      pitch: 1.0,
+      volume: 1.0,
+      continuous: false,
+      autoSpeak: true,
+    };
   });
 
   const recognitionRef = useRef<any>(null);
@@ -218,14 +230,22 @@ export function useVoiceAssistant() {
         const bestVoice = findBestSpanishVoice(voices);
 
         if (bestVoice) {
-          setVoiceSettings((prev) => ({
-            ...prev,
-            voiceURI: bestVoice.voiceURI,
-            voiceName: bestVoice.name,
-            voiceLang: bestVoice.lang,
-            rate: 0.98,
-            pitch: 1.0,
-          }));
+          setVoiceSettings((prev) => {
+            const updated = {
+              ...prev,
+              voiceURI: prev.voiceURI || bestVoice.voiceURI,
+              voiceName: prev.voiceURI ? prev.voiceName : bestVoice.name,
+              voiceLang: prev.voiceURI ? prev.voiceLang : bestVoice.lang,
+              rate: prev.rate || 0.98,
+              pitch: prev.pitch || 1.0,
+            };
+            try {
+              localStorage.setItem('uni_voice_settings', JSON.stringify(updated));
+            } catch (e) {
+              // ignore
+            }
+            return updated;
+          });
         }
       }
     };
