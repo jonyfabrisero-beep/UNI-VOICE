@@ -1,0 +1,6 @@
+{
+  "name": "Asistente de Voz IA",
+  "description": "Asistente de inteligencia artificial por voz con esfera de energía interactiva y base de conocimiento documental.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
