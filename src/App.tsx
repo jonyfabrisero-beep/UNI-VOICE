@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { EnergyOrb } from './components/EnergyOrb';
 import { QuickPrompts } from './components/QuickPrompts';
 import { ChatView } from './components/ChatView';
 import { useVoiceAssistant } from './hooks/useVoiceAssistant';
-import { MessageSquare, Volume2, VolumeX, Send, Sparkles, RotateCcw, AlertCircle } from 'lucide-react';
+import { MessageSquare, Volume2, VolumeX, AlertCircle } from 'lucide-react';
 
 export default function App() {
   const {
@@ -22,7 +22,13 @@ export default function App() {
   } = useVoiceAssistant();
 
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [inputText, setInputText] = useState('');
+
+  // Auto-open chat view as soon as user asks a query or processing begins
+  useEffect(() => {
+    if (state === 'processing') {
+      setIsChatOpen(true);
+    }
+  }, [state]);
 
   const handleToggleMute = () => {
     if (voiceSettings.volume > 0) {
@@ -38,25 +44,14 @@ export default function App() {
   };
 
   const handleSelectPrompt = (prompt: string) => {
+    setIsChatOpen(true);
     processQuery(prompt);
-  };
-
-  const handleFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (inputText.trim() && state !== 'processing') {
-      processQuery(inputText.trim());
-      setInputText('');
-    }
   };
 
   const isListening = state === 'listening';
   const isProcessing = state === 'processing';
   const isSpeaking = state === 'speaking';
   const isMuted = voiceSettings.volume === 0;
-
-  // Get the most recent assistant message to display on the main stage
-  const lastAssistantMessage = [...messages].reverse().find((m) => m.role === 'assistant');
-  const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
 
   return (
     <div className="relative min-h-screen bg-[#050508] text-white flex flex-col justify-between overflow-x-hidden font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
@@ -176,71 +171,13 @@ export default function App() {
             )}
           </div>
 
-          {/* Latest AI Answer Display Card */}
-          {lastAssistantMessage && !isListening && (
-            <div className="mt-5 w-full max-w-xl px-4 animate-fade-in">
-              <div className="p-4 rounded-2xl bg-[#0e101d]/90 border border-indigo-500/20 backdrop-blur-md shadow-xl text-left space-y-2.5">
-                {lastUserMessage && (
-                  <div className="text-[11px] text-gray-400 flex items-center gap-1.5 font-medium border-b border-white/5 pb-1.5">
-                    <span className="text-cyan-400 font-semibold">Tú:</span> "{lastUserMessage.text}"
-                  </div>
-                )}
-                <div className="text-xs sm:text-sm text-slate-200 leading-relaxed font-normal">
-                  {lastAssistantMessage.text}
-                </div>
-                <div className="flex items-center justify-between pt-1 text-[11px] text-gray-400">
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles className="w-3 h-3 text-cyan-400" />
-                    <span>Uni Voice</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => speakResponse(lastAssistantMessage.text)}
-                    className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
-                    title="Repetir respuesta por voz"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>Escuchar de nuevo</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Suggested Queries */}
-          <div className="mt-6 w-full">
+          <div className="mt-8 w-full">
             <QuickPrompts
               onSelectPrompt={handleSelectPrompt}
               disabled={isProcessing}
             />
           </div>
-
-          {/* Integrated Quick Bar (Text + Voice Action) */}
-          <form
-            onSubmit={handleFormSubmit}
-            className="mt-6 w-full max-w-xl px-4 flex items-center gap-2"
-          >
-            <div className="relative flex-1">
-              <input
-                id="main-user-input"
-                type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                placeholder="Escribe o pregunta algo (ej. ¿Qué combos hay?)..."
-                disabled={isProcessing}
-                className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-gray-500 text-xs sm:text-sm focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/40 backdrop-blur-md transition-all shadow-inner"
-              />
-            </div>
-            <button
-              id="main-submit-btn"
-              type="submit"
-              disabled={!inputText.trim() || isProcessing}
-              className="p-3 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white disabled:opacity-40 disabled:pointer-events-none transition-all cursor-pointer shadow-lg hover:shadow-cyan-500/20 active:scale-95 shrink-0"
-              title="Enviar pregunta"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
         </div>
       </main>
 

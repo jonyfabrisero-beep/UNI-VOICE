@@ -8,67 +8,99 @@ function interpretContextConversational(query: string, documentContent: string):
   const doc = documentContent || "";
   const docLower = doc.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-  // 1. Food, hunger, meal, burger, chicken, combos, cravings
+  // 1. Food, hunger, restaurants, burgers, pizza, sushi, coffee
   const foodKeywords = [
     'hambre', 'comer', 'comida', 'almorzar', 'almuerzo', 'cenar', 'cena', 'plato', 'picar', 'antojo',
     'hamburguesa', 'burger', 'burguer', 'doppio', 'monster', 'pollo', 'crispy', 'combo', 'arepitas',
-    'papas', 'papitas', 'refresco', 'carne', 'rapida', 'restaurante', 'menu', 'sabroso', 'rico', 'alimento'
+    'papas', 'papitas', 'refresco', 'carne', 'rapida', 'restaurante', 'menu', 'sabroso', 'rico', 'alimento',
+    'pizza', 'sushi', 'cebiche', 'ceviche', 'shawarma', 'arabe', 'cafe', 'helado', 'gelato', 'postre', 'merienda'
   ];
   const hasFoodIntent = foodKeywords.some(kw => q.includes(kw));
 
-  // 2. Ingredients, contents, recipe, cheese, bacon, bread
+  // 2. Specific food brands in Unicentro
+  if (q.includes('pizza') || q.includes('beato') || q.includes('demaciao')) {
+    return "En Unicentro Maracay tienes Beato Napoletano con pizzas a la leña en el bulevar gastronómico, y Demaciao Pizza para pizzas rápidas familiares.";
+  }
+  if (q.includes('sushi') || q.includes('cebiche') || q.includes('ceviche') || q.includes('japones') || q.includes('asiatic')) {
+    return "Para comida japonesa y fusión peruana cuentas con Sushi & Cebiches en el bulevar, y Orbe Exotic Food con cócteles y comida asiática gourmet.";
+  }
+  if (q.includes('cafe') || q.includes('helado') || q.includes('gelato') || q.includes('postre') || q.includes('torta') || q.includes('merienda')) {
+    return "Para café y meriendas tienes Ventus Café & Bistro con cafés y frappes, o Biella Gelato con auténticos helados artesanales en el bulevar.";
+  }
+  if (q.includes('arabe') || q.includes('shawarma') || q.includes('falafel') || q.includes('lubnan')) {
+    return "Para comida árabe tradicional tienes Lubnan Shawarmas en el bulevar gastronómico, con shawarmas de carne, pollo, falafel y cremas.";
+  }
+
+  // 3. Ingredients, contents, recipe, cheese, bacon, bread
   const ingredientKeywords = [
     'ingrediente', 'lleva', 'trae', 'contiene', 'prepara', 'receta', 'queso', 'tocineta', 'pan',
     'salsa', 'cebolla', 'lechuga', 'gouda', 'kraft', 'parmesano', 'pretzel', 'brioche', 'mayo', 'ranch'
   ];
   const hasIngredientIntent = ingredientKeywords.some(kw => q.includes(kw));
 
-  // 3. Price, cost, promos, discounts, cheap, expensive
+  // 4. Price, cost, promos, discounts, cheap, expensive
   const priceKeywords = [
     'precio', 'costo', 'cuesta', 'vale', 'cuanto', 'promo', 'promocion', 'promociones', 'oferta',
     'descuento', 'barato', 'economico', 'combo', 'dolar', 'dolares'
   ];
   const hasPriceIntent = priceKeywords.some(kw => q.includes(kw));
 
-  // 4. Beauty, salon, aesthetics, cosmetics, hair, nails, skincare
+  // 5. Beauty, salon, cosmetics, nails, hair
   const beautyKeywords = [
     'belleza', 'maquillaje', 'cosmetico', 'cosmetica', 'peinado', 'cabello', 'pelo', 'unas',
     'estetica', 'salon', 'peluqueria', 'spa', 'skincare', 'piel', 'coreano', 'k-beauty', 'hallyu',
-    'glossy', 'mia', 'studio 1118', 'vijones', 'mujer', 'arreglarme', 'ponerme linda', 'linda', 'guapa'
+    'glossy', 'mia', 'studio 1118', 'vijones', 'carolina reveron', 'linda', 'guapa'
   ];
   const hasBeautyIntent = beautyKeywords.some(kw => q.includes(kw));
 
-  // 5. Schedule, hours, open, close, time
+  // 6. Supermarket, pharmacy, services, travel, mobile
+  if (q.includes('farmacia') || q.includes('farmatodo') || q.includes('medicina') || q.includes('pastilla')) {
+    return "Unicentro Maracay cuenta con Farmatodo en planta baja con acceso vehicular y peatonal para medicinas, conveniencia y cuidado personal.";
+  }
+  if (q.includes('supermercado') || q.includes('mercado') || q.includes('forum') || q.includes('viveres') || q.includes('compras')) {
+    return "Cuentas con Forum Súper Mayorista en la entrada principal para compras de víveres, carnicería, panadería y licores al mayor y detal.";
+  }
+  if (q.includes('viaje') || q.includes('boleto') || q.includes('pasaje') || q.includes('vuelo') || q.includes('viajea')) {
+    return "En el área climatizada del piso 1 se encuentra la agencia Viajea, donde puedes gestionar boletos aéreos, paquetes turísticos y traslados.";
+  }
+  if (q.includes('digitel') || q.includes('linea') || q.includes('chip') || q.includes('esim') || q.includes('saldo')) {
+    return "En planta baja tienes el centro de atención Digitel para activación de líneas, planes 4G y recargas.";
+  }
+  if (q.includes('zapato') || q.includes('calzado') || q.includes('ropa') || q.includes('moda') || q.includes('arrow') || q.includes('jump')) {
+    return "Para moda y calzado dispones de tiendas como Jump, Jadu, X Shoes, Invictus y la boutique de ropa masculina ARROW.";
+  }
+
+  // 7. Schedule, hours, open, close
   const scheduleKeywords = [
     'horario', 'hora', 'abierto', 'abren', 'cierran', 'atienden', 'tiempo', 'tarde', 'noche', 'domingo', 'hoy', 'manana'
   ];
   const hasScheduleIntent = scheduleKeywords.some(kw => q.includes(kw));
 
-  // 6. Location, where is it, directions, floor
+  // 8. Location, directions, address
   const locationKeywords = [
-    'ubicacion', 'donde', 'queda', 'llegar', 'piso', 'bulevar', 'entrada', 'sitio', 'direccion', 'local', 'lugar'
+    'ubicacion', 'donde', 'queda', 'llegar', 'piso', 'bulevar', 'entrada', 'sitio', 'direccion', 'local', 'lugar', 'avenida', 'casanova'
   ];
   const hasLocationIntent = locationKeywords.some(kw => q.includes(kw));
 
-  // 7. Delivery, phone, contact, whatsapp, order
+  // 9. Delivery & WhatsApp
   const contactKeywords = [
     'whatsapp', 'telefono', 'numero', 'contacto', 'pedir', 'pedido', 'delivery', 'domicilio', 'llamar', 'envio'
   ];
   const hasContactIntent = contactKeywords.some(kw => q.includes(kw));
 
-  // 8. Greetings & general assistance
+  // 10. Greetings
   const greetingKeywords = ['hola', 'buenos dias', 'buenas tardes', 'buenas noches', 'que tal', 'quien eres', 'ayuda'];
   const hasGreetingIntent = greetingKeywords.some(kw => q.includes(kw));
 
   // Conversational Intent Resolution:
   if (hasIngredientIntent) {
     if (q.includes('monster') || q.includes('premium') || q.includes('pretzel') || q.includes('gouda')) {
-      return "La hamburguesa Monster Cheese lleva pan pretzel, pollo crispy, queso gouda holandés, mermelada de tocineta, tira de tocineta extra, lechuga fresca y salsa mayo ranch.";
+      return "La hamburguesa Monster Cheese de Pollos Gran Combo lleva pan pretzel, pollo crispy, queso gouda holandés, mermelada de tocineta, tira de tocineta extra, lechuga fresca y salsa mayo ranch.";
     }
     if (q.includes('doppio') || q.includes('kraft') || q.includes('brioche') || q.includes('estandar') || q.includes('standard')) {
       return "La hamburguesa Doppio Cheese viene con pan brioche con queso parmesano, pollo crispy, queso Kraft, tocineta crujiente, cebolla caramelizada y salsa de ajo parmesano.";
     }
-    return "En Pollos Gran Combo tienes la Doppio Cheese con queso Kraft y cebolla caramelizada, o la Monster Cheese con queso gouda holandés y mermelada de tocineta en pan pretzel.";
+    return "En Pollos Gran Combo tienes la Doppio Cheese con queso Kraft y cebolla caramelizada ($6.99), o la Monster Cheese con queso gouda holandés y mermelada de tocineta en pan pretzel ($9.99).";
   }
 
   if (hasPriceIntent) {
@@ -79,43 +111,31 @@ function interpretContextConversational(query: string, documentContent: string):
   }
 
   if (hasBeautyIntent) {
-    return "En el centro comercial contamos con varias tiendas de belleza: Hallyu K-Beauty para cosmética coreana, Glossy Beauty Studio, MÏA Cosmetics, Studio 1118 y Vijones Beauty Bar para estilismo y uñas.";
+    return "En Unicentro Maracay contamos con varias opciones de belleza: Hallyu K-Beauty para cosmética coreana, Glossy Beauty Studio, MÏA Cosmetics, Studio 1118 y Vijones Beauty Bar para manicura.";
   }
 
   if (hasContactIntent) {
-    return "Puedes hacer tus pedidos o solicitar delivery directamente por WhatsApp escribiendo al número +58 424 306 5534.";
+    return "Puedes hacer tus pedidos o solicitar delivery de Pollos Gran Combo escribiendo directamente a su WhatsApp al +58 424 306 5534.";
   }
 
   if (hasScheduleIntent) {
-    return "Pollos Gran Combo está abierto todos los días desde las 10:00 de la mañana hasta las 10:00 de la noche.";
+    return "Unicentro Maracay abre de lunes a domingo de 10:00 AM a 8:00 PM, y los locales gastronómicos del bulevar atienden hasta las 10:00 o 11:00 PM.";
   }
 
   if (hasLocationIntent) {
-    return "Pollos Gran Combo se encuentra ubicado en el bulevar del centro comercial, justo al lado de la entrada al área climatizada.";
+    return "Unicentro Maracay está ubicado en la Avenida José Casanova Godoy. Pollos Gran Combo se encuentra en el bulevar gastronómico al lado de la entrada al área climatizada.";
   }
 
   if (hasFoodIntent) {
-    return "Si buscas algo sabroso para comer, en Pollos Gran Combo te recomiendo probar las hamburguesas Master Burguer: la Doppio Cheese por $6.99 o la Monster Cheese por $9.99, además de sus combos de pollo crispy.";
+    return "En el bulevar gastronómico tienes opciones como Pollos Gran Combo con pollo crispy y hamburguesas, Beato Napoletano para pizzas, Sushi & Cebiches y Zeta Burger.";
   }
 
   if (hasGreetingIntent) {
-    return "¡Hola! Con mucho gusto te ayudo. En el centro comercial te puedo informar sobre las promociones y opciones de Pollos Gran Combo o sobre nuestras tiendas de belleza. ¿Qué te gustaría saber?";
+    return "¡Hola! Bienvenido a Unicentro Maracay. Te puedo orientar sobre tiendas, bulevar gastronómico, belleza, servicios y promociones. ¿Qué te gustaría consultar?";
   }
 
-  // Dynamic excerpt synthesis if custom document is loaded
-  if (doc && !docLower.includes('pollos gran combo')) {
-    const lines = doc.split('\n').filter(l => l.trim().length > 0);
-    const words = q.split(' ').filter(w => w.length > 3);
-    const matchedLine = lines.find(l => {
-      const lineLower = l.toLowerCase();
-      return words.some(w => lineLower.includes(w));
-    });
-    if (matchedLine) {
-      return `De acuerdo a la información disponible: ${matchedLine.replace(/[#*•-]/g, '').trim()}`;
-    }
-  }
-
-  return "Te puedo ayudar con información de Pollos Gran Combo, como sus hamburguesas Doppio y Monster Cheese, combos familiares, horarios, ubicación y WhatsApp, o también sobre nuestras tiendas de belleza disponibles. ¿Cuál te interesa?";
+  // General fallback
+  return "Te puedo ayudar con información de tiendas, bulevar gastronómico, ubicación, eventos de Unicentro Maracay y las promociones de Pollos Gran Combo. ¿En qué te puedo colaborar?";
 }
 
 export function useVoiceAssistant() {
@@ -459,6 +479,8 @@ export function useVoiceAssistant() {
     setErrorMessage(null);
 
     let assistantResponseText = '';
+    let sources: Array<{ title: string; uri?: string }> | undefined = undefined;
+    let sourceType: 'directory' | 'grounding' | 'pdf' | undefined = 'directory';
 
     try {
       const response = await fetch('/api/chat', {
@@ -480,6 +502,8 @@ export function useVoiceAssistant() {
 
       const data = await response.json();
       const rawResponse = data.reply || data.text || '';
+      sources = data.sources;
+      sourceType = data.sourceType || 'directory';
       
       // Clean up markdown/bullet points so it sounds natural in TTS & reads clearly
       assistantResponseText = rawResponse
@@ -488,6 +512,7 @@ export function useVoiceAssistant() {
     } catch (err) {
       console.warn('Using local conversational semantic interpreter fallback:', err);
       assistantResponseText = interpretContextConversational(cleanQuery, knowledgeDocRef.current.content);
+      sourceType = 'directory';
     }
 
     const assistantMsg: ChatMessage = {
@@ -495,6 +520,8 @@ export function useVoiceAssistant() {
       role: 'assistant',
       text: assistantResponseText,
       timestamp: new Date(),
+      sourceType,
+      sources,
     };
 
     setMessages((prev) => [...prev, assistantMsg]);

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AssistantState } from '../types';
-import { ArrowLeft, Mic, MicOff, Send, Volume2, VolumeX, Sparkles, Trash2, CheckCheck } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Send, Volume2, VolumeX, Sparkles, Trash2, CheckCheck, Globe, Compass, ExternalLink } from 'lucide-react';
 
 interface ChatViewProps {
   messages: ChatMessage[];
@@ -159,6 +159,40 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 }`}
               >
                 <p className="whitespace-pre-wrap">{msg.text}</p>
+
+                {/* Hybrid Knowledge Badge & Sources */}
+                {!isUser && msg.sourceType && (
+                  <div className="mt-2 pt-1.5 border-t border-white/5 flex flex-wrap items-center gap-1.5 text-[10px]">
+                    {msg.sourceType === 'grounding' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300 border border-blue-500/20 font-medium">
+                        <Globe className="w-2.5 h-2.5 text-blue-400" />
+                        Google Search Grounding
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-medium">
+                        <Compass className="w-2.5 h-2.5 text-emerald-400" />
+                        Directorio Sincronizado
+                      </span>
+                    )}
+
+                    {msg.sources && msg.sources.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1 mt-1 w-full">
+                        {msg.sources.map((src, idx) => (
+                          <a
+                            key={idx}
+                            href={src.uri}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[9px] text-cyan-400/80 hover:text-cyan-300 underline underline-offset-2 hover:bg-white/5 px-1 py-0.5 rounded"
+                          >
+                            <ExternalLink className="w-2 h-2" />
+                            {src.title.length > 25 ? `${src.title.slice(0, 25)}...` : src.title}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div
                   className={`flex items-center justify-end gap-1.5 mt-1.5 text-[10px] ${

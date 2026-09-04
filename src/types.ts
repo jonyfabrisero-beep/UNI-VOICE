@@ -6,6 +6,8 @@ export interface ChatMessage {
   text: string;
   timestamp: Date;
   audioDuration?: number;
+  sourceType?: 'directory' | 'grounding' | 'pdf';
+  sources?: Array<{ title: string; uri?: string }>;
 }
 
 export interface KnowledgeDocument {
