@@ -234,70 +234,25 @@ export function useVoiceAssistant() {
     window.speechSynthesis.onvoiceschanged = loadVoices;
   }, []);
 
-  // Cleanup audio tracks
-  const stopAudioCapture = useCallback(() => {
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-      animFrameRef.current = null;
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
-    }
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      audioContextRef.current.close().catch(() => {});
-      audioContextRef.current = null;
-    }
-    setAudioLevel(0);
-  }, []);
-
-  // Audio level simulator & optional visualizer
+  // Safe audio visualizer pulse for listening mode
   const startAudioCapture = useCallback(async () => {
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null);
-        if (stream) {
-          mediaStreamRef.current = stream;
-          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-          if (AudioContextClass) {
-            const ctx = new AudioContextClass();
-            audioContextRef.current = ctx;
-            const analyser = ctx.createAnalyser();
-            analyser.fftSize = 64;
-            analyserRef.current = analyser;
-
-            const source = ctx.createMediaStreamSource(stream);
-            source.connect(analyser);
-
-            const dataArray = new Uint8Array(analyser.frequencyBinCount);
-            const updateVisual = () => {
-              if (stateRef.current !== 'listening') return;
-              analyser.getByteFrequencyData(dataArray);
-              let sum = 0;
-              for (let i = 0; i < dataArray.length; i++) {
-                sum += dataArray[i];
-              }
-              const avg = sum / dataArray.length;
-              setAudioLevel(Math.min(1, Math.max(0.15, avg / 128)));
-              animFrameRef.current = requestAnimationFrame(updateVisual);
-            };
-            updateVisual();
-            return;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('Audio visualization fallback:', e);
-    }
-
-    // Fallback pulse if AudioContext is unavailable
-    const interval = setInterval(() => {
+    // Generate organic ambient listening pulses for the orb visualizer
+    const pulseInterval = setInterval(() => {
       if (stateRef.current !== 'listening') {
-        clearInterval(interval);
+        clearInterval(pulseInterval);
         return;
       }
-      setAudioLevel(0.25 + Math.random() * 0.45);
-    }, 120);
+      setAudioLevel(0.35 + Math.random() * 0.45);
+    }, 80);
+    (animFrameRef as any)._listeningInterval = pulseInterval;
+  }, []);
+
+  const stopAudioCapture = useCallback(() => {
+    if ((animFrameRef as any)._listeningInterval) {
+      clearInterval((animFrameRef as any)._listeningInterval);
+      (animFrameRef as any)._listeningInterval = null;
+    }
+    setAudioLevel(0);
   }, []);
 
   // Stop current AI speaking voice
@@ -392,15 +347,18 @@ export function useVoiceAssistant() {
       currentUtteranceRef.current = null;
     };
 
-    // Small delay to ensure synthesis queue is cleared
+    // Small delay to ensure synthesis queue is cleared and resumed
     setTimeout(() => {
       try {
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
         window.speechSynthesis.speak(utterance);
       } catch (err) {
         console.error('Failed to trigger speech synthesis:', err);
         setState('idle');
       }
-    }, 50);
+    }, 40);
   }, [availableVoices, voiceSettings, findBestSpanishVoice]);
 
   // Auto-speak welcome greeting when app starts
@@ -593,18 +551,24 @@ export function useVoiceAssistant() {
       };
 
       recognition.onresult = (event: any) => {
-        let fullTranscript = '';
+        let interimText = '';
+        let finalText = '';
 
         for (let i = 0; i < event.results.length; ++i) {
-          fullTranscript += event.results[i][0].transcript + ' ';
+          const item = event.results[i];
+          if (item.isFinal) {
+            finalText += item[0].transcript + ' ';
+          } else {
+            interimText += item[0].transcript + ' ';
+          }
         }
 
-        const currentText = fullTranscript.trim();
-        if (currentText) {
-          latestTranscriptRef.current = currentText;
-          setLiveTranscript(currentText);
+        const combinedText = (finalText + interimText).trim();
+        if (combinedText) {
+          latestTranscriptRef.current = combinedText;
+          setLiveTranscript(combinedText);
 
-          // Reset silence debounce timer (900ms of quiet after speaking auto-submits)
+          // Reset silence debounce timer (1100ms of quiet after speaking auto-submits)
           if (silenceTimeoutRef.current) {
             clearTimeout(silenceTimeoutRef.current);
           }
@@ -618,31 +582,42 @@ export function useVoiceAssistant() {
               stopAudioCapture();
               processQueryRef.current(textToSend);
             }
-          }, 950);
+          }, 1100);
         }
       };
 
       recognition.onerror = (event: any) => {
         console.warn('Speech recognition status:', event.error);
-        if (silenceTimeoutRef.current) {
-          clearTimeout(silenceTimeoutRef.current);
-          silenceTimeoutRef.current = null;
-        }
 
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+            silenceTimeoutRef.current = null;
+          }
           isRecognizingRef.current = false;
           stopAudioCapture();
-          setErrorMessage('Permiso de micrófono no otorgado. Por favor permite el acceso al micrófono.');
+          setErrorMessage('Permiso de micrófono bloqueado. Por favor permite el acceso al micrófono en tu navegador o escribe tu consulta.');
           setState('error');
-        } else if (event.error === 'no-speech') {
-          // Keep listening or if user finished, process
-          if (!latestTranscriptRef.current.trim()) {
-            isRecognizingRef.current = false;
-            stopAudioCapture();
-            setState('idle');
+        } else if (event.error === 'network') {
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+            silenceTimeoutRef.current = null;
           }
+          isRecognizingRef.current = false;
+          stopAudioCapture();
+          setErrorMessage('El servicio de voz del navegador no pudo conectarse. Puedes escribir tu pregunta en la barra inferior.');
+          setState('idle');
+        } else if (event.error === 'no-speech') {
+          // If no speech heard yet, allow user more time instead of abrupt cancel
+          console.log('No speech detected yet, waiting for user...');
+        } else if (event.error === 'aborted') {
+          // Aborted by user action or re-click
         } else {
           const textToSubmit = latestTranscriptRef.current.trim();
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+            silenceTimeoutRef.current = null;
+          }
           isRecognizingRef.current = false;
           stopAudioCapture();
           if (textToSubmit) {

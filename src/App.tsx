@@ -3,7 +3,7 @@ import { EnergyOrb } from './components/EnergyOrb';
 import { QuickPrompts } from './components/QuickPrompts';
 import { ChatView } from './components/ChatView';
 import { useVoiceAssistant } from './hooks/useVoiceAssistant';
-import { MessageSquare, Volume2, VolumeX } from 'lucide-react';
+import { MessageSquare, Volume2, VolumeX, Send, Sparkles, RotateCcw, AlertCircle } from 'lucide-react';
 
 export default function App() {
   const {
@@ -22,13 +22,7 @@ export default function App() {
   } = useVoiceAssistant();
 
   const [isChatOpen, setIsChatOpen] = useState(false);
-
-  // Auto-open chat view once the user has spoken and AI begins processing the response
-  React.useEffect(() => {
-    if (state === 'processing') {
-      setIsChatOpen(true);
-    }
-  }, [state]);
+  const [inputText, setInputText] = useState('');
 
   const handleToggleMute = () => {
     if (voiceSettings.volume > 0) {
@@ -40,7 +34,6 @@ export default function App() {
   };
 
   const handleAtomClick = () => {
-    // Only toggle listening, keep user on main screen to see the green listening atom
     toggleListening();
   };
 
@@ -48,10 +41,22 @@ export default function App() {
     processQuery(prompt);
   };
 
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (inputText.trim() && state !== 'processing') {
+      processQuery(inputText.trim());
+      setInputText('');
+    }
+  };
+
   const isListening = state === 'listening';
   const isProcessing = state === 'processing';
   const isSpeaking = state === 'speaking';
   const isMuted = voiceSettings.volume === 0;
+
+  // Get the most recent assistant message to display on the main stage
+  const lastAssistantMessage = [...messages].reverse().find((m) => m.role === 'assistant');
+  const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
 
   return (
     <div className="relative min-h-screen bg-[#050508] text-white flex flex-col justify-between overflow-x-hidden font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
@@ -69,7 +74,7 @@ export default function App() {
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px] h-[380px] bg-cyan-500/10 rounded-full blur-[100px] pointer-events-none z-0" />
 
       {/* Sleek Minimal Header */}
-      <header className="relative z-10 w-full max-w-4xl mx-auto px-6 py-6 flex justify-between items-center">
+      <header className="relative z-10 w-full max-w-4xl mx-auto px-6 py-5 flex justify-between items-center">
         {/* Brand */}
         <h1 className="text-2xl font-light tracking-tight text-white flex items-center gap-1.5">
           Uni <span className="font-bold text-indigo-400">Voice</span>
@@ -86,7 +91,7 @@ export default function App() {
               title="Abrir historial del chat"
             >
               <MessageSquare className="w-4 h-4 text-cyan-400" />
-              <span className="hidden sm:inline">Ver Chat</span>
+              <span className="hidden sm:inline">Ver Chat ({messages.length})</span>
             </button>
           )}
 
@@ -107,8 +112,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Interactive Stage: Atom with Mic + 2 Suggested Queries */}
-      <main className="relative z-10 flex-grow flex flex-col items-center justify-center px-4 py-8 w-full max-w-3xl mx-auto my-auto">
+      {/* Main Interactive Stage: Atom with Mic + 2 Suggested Queries + Dynamic Response */}
+      <main className="relative z-10 flex-grow flex flex-col items-center justify-center px-4 py-4 w-full max-w-3xl mx-auto my-auto space-y-6">
         <div className="relative flex flex-col items-center justify-center w-full">
           {/* Subtle concentric rings */}
           <div className="relative flex items-center justify-center">
@@ -120,15 +125,15 @@ export default function App() {
               state={state}
               audioLevel={audioLevel}
               onClick={handleAtomClick}
-              className="w-72 h-72 sm:w-88 sm:h-88 md:w-96 md:h-96"
+              className="w-64 h-64 sm:w-80 sm:h-80 md:w-88 md:h-88"
             />
           </div>
 
           {/* Status Hint & Live Transcription Banner */}
-          <div className="mt-6 text-center max-w-lg w-full px-4">
+          <div className="mt-4 text-center max-w-lg w-full px-4">
             {isListening ? (
               <div className="flex flex-col items-center gap-2.5 animate-fade-in">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs sm:text-sm font-medium shadow-lg backdrop-blur-md">
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs sm:text-sm font-medium shadow-lg backdrop-blur-md">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
                   <span>{liveTranscript ? `"${liveTranscript}"` : 'Escuchando tu voz... Habla ahora'}</span>
                 </div>
@@ -151,11 +156,11 @@ export default function App() {
               <button
                 type="button"
                 onClick={stopSpeaking}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs sm:text-sm font-medium transition-all cursor-pointer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/40 text-indigo-200 text-xs sm:text-sm font-medium transition-all cursor-pointer"
                 title="Haz clic para pausar"
               >
                 <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
-                <span>Respondiendo por voz (clic para pausar)</span>
+                <span>Respondiendo por voz (toca para pausar)</span>
               </button>
             ) : (
               <p className="text-gray-400 text-xs sm:text-sm tracking-wide">
@@ -164,26 +169,87 @@ export default function App() {
             )}
 
             {errorMessage && (
-              <p className="mt-3 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-xl">
-                {errorMessage}
-              </p>
+              <div className="mt-3 flex items-center justify-center gap-2 text-xs text-rose-300 bg-rose-500/15 border border-rose-500/30 px-3.5 py-2 rounded-xl">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                <span>{errorMessage}</span>
+              </div>
             )}
           </div>
 
+          {/* Latest AI Answer Display Card */}
+          {lastAssistantMessage && !isListening && (
+            <div className="mt-5 w-full max-w-xl px-4 animate-fade-in">
+              <div className="p-4 rounded-2xl bg-[#0e101d]/90 border border-indigo-500/20 backdrop-blur-md shadow-xl text-left space-y-2.5">
+                {lastUserMessage && (
+                  <div className="text-[11px] text-gray-400 flex items-center gap-1.5 font-medium border-b border-white/5 pb-1.5">
+                    <span className="text-cyan-400 font-semibold">Tú:</span> "{lastUserMessage.text}"
+                  </div>
+                )}
+                <div className="text-xs sm:text-sm text-slate-200 leading-relaxed font-normal">
+                  {lastAssistantMessage.text}
+                </div>
+                <div className="flex items-center justify-between pt-1 text-[11px] text-gray-400">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3 text-cyan-400" />
+                    <span>Uni Voice</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => speakResponse(lastAssistantMessage.text)}
+                    className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
+                    title="Repetir respuesta por voz"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Escuchar de nuevo</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Suggested Queries */}
-          <div className="mt-8 w-full">
+          <div className="mt-6 w-full">
             <QuickPrompts
               onSelectPrompt={handleSelectPrompt}
               disabled={isProcessing}
             />
           </div>
+
+          {/* Integrated Quick Bar (Text + Voice Action) */}
+          <form
+            onSubmit={handleFormSubmit}
+            className="mt-6 w-full max-w-xl px-4 flex items-center gap-2"
+          >
+            <div className="relative flex-1">
+              <input
+                id="main-user-input"
+                type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder="Escribe o pregunta algo (ej. ¿Qué combos hay?)..."
+                disabled={isProcessing}
+                className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 text-white placeholder-gray-500 text-xs sm:text-sm focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/40 backdrop-blur-md transition-all shadow-inner"
+              />
+            </div>
+            <button
+              id="main-submit-btn"
+              type="submit"
+              disabled={!inputText.trim() || isProcessing}
+              className="p-3 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white disabled:opacity-40 disabled:pointer-events-none transition-all cursor-pointer shadow-lg hover:shadow-cyan-500/20 active:scale-95 shrink-0"
+              title="Enviar pregunta"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </form>
         </div>
       </main>
 
-      {/* Minimal Footer Padding */}
-      <div className="h-6" />
+      {/* Minimal Footer */}
+      <footer className="relative z-10 w-full text-center py-4 text-[11px] text-gray-500">
+        Responde en lenguaje natural basado en la información comercial disponible
+      </footer>
 
-      {/* Chat View Overlay (Reference Image Style) */}
+      {/* Chat View Overlay */}
       {isChatOpen && (
         <ChatView
           messages={messages}
