@@ -96,7 +96,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               <div
                 className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full ring-2 ring-[#07070e] ${
                   isListening
-                    ? 'bg-red-500 animate-pulse'
+                    ? 'bg-emerald-400 animate-pulse'
                     : isSpeaking
                     ? 'bg-cyan-400 animate-pulse'
                     : 'bg-emerald-400'
@@ -232,7 +232,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             onClick={onToggleListening}
             className={`p-3 rounded-full transition-all duration-200 cursor-pointer shadow-lg flex items-center justify-center ${
               isListening
-                ? 'bg-red-500 text-white ring-4 ring-red-500/30 animate-pulse scale-105'
+                ? 'bg-emerald-500 text-white ring-4 ring-emerald-500/30 animate-pulse scale-105 shadow-emerald-500/30'
                 : isSpeaking
                 ? 'bg-cyan-500 text-black ring-4 ring-cyan-500/30'
                 : 'bg-white/10 hover:bg-white/20 text-cyan-400 border border-white/10'

@@ -80,7 +80,60 @@ export function useVoiceAssistant() {
   const isSpeechRecognitionSupported = typeof window !== 'undefined' && 
     ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
 
-  // Initialize Web Speech Voices
+  // Helper to score and select the highest quality natural Spanish voice
+  const findBestSpanishVoice = (voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined => {
+    const spanishVoices = voices.filter((v) => v.lang.startsWith('es') || v.lang.includes('ES') || v.lang.includes('MX'));
+    if (spanishVoices.length === 0) return voices.find((v) => v.lang.startsWith('es')) || voices[0];
+
+    const scoreVoice = (v: SpeechSynthesisVoice): number => {
+      let score = 0;
+      const name = v.name.toLowerCase();
+      const lang = v.lang.toLowerCase();
+
+      // Highest priority: Modern Natural / Neural / Online voices
+      if (name.includes('natural') || name.includes('online')) score += 120;
+      if (name.includes('neural')) score += 100;
+      if (name.includes('enhanced') || name.includes('premium')) score += 90;
+      if (name.includes('google')) score += 80;
+      if (name.includes('microsoft')) score += 70;
+      if (name.includes('apple') || name.includes('siri')) score += 65;
+
+      // Well-known natural human-modeled voice names
+      if (
+        name.includes('jorge') ||
+        name.includes('dalia') ||
+        name.includes('salome') ||
+        name.includes('paulina') ||
+        name.includes('monica') ||
+        name.includes('helena') ||
+        name.includes('lucia') ||
+        name.includes('sofia') ||
+        name.includes('mia') ||
+        name.includes('diego') ||
+        name.includes('alvaro') ||
+        name.includes('carlos')
+      ) {
+        score += 45;
+      }
+
+      // Penalize legacy robotic desktop synthesizers
+      if (name.includes('desktop') || name.includes('espeak') || name.includes('compact') || name.includes('synthesizer')) {
+        score -= 40;
+      }
+
+      // Prefer standard regions
+      if (lang === 'es-mx' || lang === 'es-us' || lang === 'es-es' || lang === 'es-419') {
+        score += 20;
+      }
+
+      return score;
+    };
+
+    const sorted = [...spanishVoices].sort((a, b) => scoreVoice(b) - scoreVoice(a));
+    return sorted[0];
+  };
+
+  // Initialize Web Speech Voices with Natural Voice Priority
   useEffect(() => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
@@ -88,17 +141,16 @@ export function useVoiceAssistant() {
       const voices = window.speechSynthesis.getVoices();
       if (voices.length > 0) {
         setAvailableVoices(voices);
-        // Find preferred Spanish voice
-        const esVoice = voices.find(
-          (v) => (v.lang.startsWith('es') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Paulina') || v.name.includes('Helena') || v.name.includes('Mónica') || v.name.includes('Jorge')))
-        ) || voices.find((v) => v.lang.startsWith('es')) || voices[0];
+        const bestVoice = findBestSpanishVoice(voices);
 
-        if (esVoice && !voiceSettings.voiceURI) {
+        if (bestVoice && !voiceSettings.voiceURI) {
           setVoiceSettings((prev) => ({
             ...prev,
-            voiceURI: esVoice.voiceURI,
-            voiceName: esVoice.name,
-            voiceLang: esVoice.lang,
+            voiceURI: bestVoice.voiceURI,
+            voiceName: bestVoice.name,
+            voiceLang: bestVoice.lang,
+            rate: 0.98,
+            pitch: 1.02,
           }));
         }
       }
@@ -189,25 +241,32 @@ export function useVoiceAssistant() {
     // Cancel previous speech
     window.speechSynthesis.cancel();
 
-    // Clean text for speech (remove markdown asterisks, emojis)
+    // Clean and normalize text for natural conversational speech
     const cleanText = text
-      .replace(/[*_#`~[\]()]/g, '')
+      .replace(/https?:\/\/\S+/gi, '') // remove URLs
+      .replace(/[*_#`~[\]()<>]/g, '') // remove markdown artifacts
+      .replace(/\bc\/u\b/gi, 'cada una')
+      .replace(/\bej\./gi, 'por ejemplo')
+      .replace(/\bwhatsapp\b/gi, 'Guasap')
+      .replace(/\bpromos?\b/gi, 'promociones')
+      .replace(/[:;]\s*/g, '. ')
       .replace(/\s+/g, ' ')
       .trim();
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
     currentUtteranceRef.current = utterance;
 
-    // Pick configured voice
-    const selectedVoice = availableVoices.find((v) => v.voiceURI === voiceSettings.voiceURI);
+    // Pick configured voice or best available Spanish voice
+    const selectedVoice = availableVoices.find((v) => v.voiceURI === voiceSettings.voiceURI) || findBestSpanishVoice(availableVoices);
     if (selectedVoice) {
       utterance.voice = selectedVoice;
+      utterance.lang = selectedVoice.lang;
     } else {
       utterance.lang = 'es-ES';
     }
 
-    utterance.rate = voiceSettings.rate;
-    utterance.pitch = voiceSettings.pitch;
+    utterance.rate = voiceSettings.rate || 0.98;
+    utterance.pitch = voiceSettings.pitch || 1.02;
     utterance.volume = voiceSettings.volume;
 
     utterance.onstart = () => {

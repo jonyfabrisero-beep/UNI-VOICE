@@ -150,8 +150,15 @@ export const EnergyOrb: React.FC<EnergyOrbProps> = ({
         auraGradient.addColorStop(0.35, 'rgba(220, 38, 38, 0.15)');
         auraGradient.addColorStop(0.7, 'rgba(153, 27, 27, 0.03)');
         auraGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      } else if (curState === 'listening') {
+        const greenAlpha = 0.6 + curAudio * 0.4;
+        auraGradient.addColorStop(0, `rgba(167, 243, 208, ${greenAlpha})`);
+        auraGradient.addColorStop(0.3, `rgba(52, 211, 153, ${greenAlpha * 0.7})`);
+        auraGradient.addColorStop(0.65, `rgba(16, 185, 129, ${greenAlpha * 0.3})`);
+        auraGradient.addColorStop(0.9, `rgba(5, 150, 105, 0.03)`);
+        auraGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
       } else {
-        const cyanAlpha = curState === 'listening' ? 0.5 : curState === 'speaking' ? 0.55 : 0.32;
+        const cyanAlpha = curState === 'speaking' ? 0.55 : 0.32;
         auraGradient.addColorStop(0, `rgba(186, 230, 253, ${cyanAlpha})`);
         auraGradient.addColorStop(0.3, `rgba(56, 189, 248, ${cyanAlpha * 0.6})`);
         auraGradient.addColorStop(0.65, `rgba(14, 165, 233, ${cyanAlpha * 0.2})`);
@@ -176,19 +183,23 @@ export const EnergyOrb: React.FC<EnergyOrbProps> = ({
         const currentRx = ring.radiusX * scale * (1 + (curAudio * 0.22 * Math.sin(time + idx)));
         const currentRy = ring.radiusY * scale * (1 + (curAudio * 0.32 * Math.cos(time + idx * 1.3)));
 
+        const activeRingColor = curState === 'listening'
+          ? (idx % 2 === 0 ? 'rgba(52, 211, 153, 0.85)' : 'rgba(110, 231, 183, 0.75)')
+          : ring.color;
+
         // Outer glow pass
         ctx.beginPath();
         ctx.ellipse(0, 0, currentRx, currentRy, ring.phase, 0, Math.PI * 2);
         ctx.lineWidth = ring.width * 2.0 * scale;
-        ctx.strokeStyle = ring.color.replace(/[\d.]+\)$/, '0.14)');
+        ctx.strokeStyle = activeRingColor.replace(/[\d.]+\)$/, '0.14)');
         ctx.stroke();
 
         // Inner bright filament pass
         ctx.beginPath();
         ctx.ellipse(0, 0, currentRx, currentRy, ring.phase, 0, Math.PI * 2);
         ctx.lineWidth = ring.width * scale;
-        ctx.strokeStyle = ring.color;
-        ctx.shadowColor = '#38bdf8';
+        ctx.strokeStyle = activeRingColor;
+        ctx.shadowColor = curState === 'listening' ? '#34d399' : '#38bdf8';
         ctx.shadowBlur = 6;
         ctx.stroke();
 
@@ -208,7 +219,7 @@ export const EnergyOrb: React.FC<EnergyOrbProps> = ({
           life: 0,
           maxLife: 16 + Math.random() * 18,
           size: (1 + Math.random() * 2.0) * scale,
-          color: Math.random() > 0.4 ? '#ffffff' : '#7dd3fc',
+          color: curState === 'listening' ? '#6ee7b7' : Math.random() > 0.4 ? '#ffffff' : '#7dd3fc',
           alpha: 1,
         });
       }
@@ -249,6 +260,12 @@ export const EnergyOrb: React.FC<EnergyOrbProps> = ({
         coreGradient.addColorStop(0.2, '#fca5a5');
         coreGradient.addColorStop(0.6, '#ef4444');
         coreGradient.addColorStop(1, 'rgba(185, 28, 28, 0.85)');
+      } else if (curState === 'listening') {
+        coreGradient.addColorStop(0, '#ffffff');
+        coreGradient.addColorStop(0.25, '#d1fae5');
+        coreGradient.addColorStop(0.5, '#34d399');
+        coreGradient.addColorStop(0.75, '#059669');
+        coreGradient.addColorStop(1, 'rgba(4, 120, 87, 0.9)');
       } else {
         coreGradient.addColorStop(0, '#ffffff');
         coreGradient.addColorStop(0.25, '#e0f2fe');
@@ -258,7 +275,7 @@ export const EnergyOrb: React.FC<EnergyOrbProps> = ({
       }
 
       ctx.save();
-      ctx.shadowColor = curState === 'error' ? '#ef4444' : '#38bdf8';
+      ctx.shadowColor = curState === 'error' ? '#ef4444' : curState === 'listening' ? '#10b981' : '#38bdf8';
       ctx.shadowBlur = (20 + curAudio * 25) * scale;
       ctx.fillStyle = coreGradient;
       ctx.beginPath();
@@ -356,9 +373,9 @@ export const EnergyOrb: React.FC<EnergyOrbProps> = ({
         <div
           className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl backdrop-blur-xs ${
             state === 'listening'
-              ? 'bg-red-500/80 text-white scale-110 ring-4 ring-red-400/50 shadow-red-500/50'
+              ? 'bg-emerald-500/90 text-white scale-110 ring-4 ring-emerald-400/50 shadow-emerald-500/50 animate-pulse'
               : state === 'processing'
-              ? 'bg-cyan-500/70 text-white animate-spin ring-4 ring-cyan-300/40 shadow-cyan-400/50'
+              ? 'bg-cyan-500/70 text-white ring-4 ring-cyan-300/40 shadow-cyan-400/50'
               : state === 'speaking'
               ? 'bg-indigo-600/80 text-white ring-4 ring-indigo-400/40 shadow-indigo-500/50'
               : 'bg-white/15 text-white ring-2 ring-white/30 hover:bg-white/25 shadow-cyan-500/20'

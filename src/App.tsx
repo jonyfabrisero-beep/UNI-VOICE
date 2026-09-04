@@ -23,6 +23,13 @@ export default function App() {
 
   const [isChatOpen, setIsChatOpen] = useState(false);
 
+  // Auto-open chat view once the user has spoken and AI begins processing the response
+  React.useEffect(() => {
+    if (state === 'processing') {
+      setIsChatOpen(true);
+    }
+  }, [state]);
+
   const handleToggleMute = () => {
     if (voiceSettings.volume > 0) {
       setVoiceSettings({ ...voiceSettings, volume: 0 });
@@ -33,12 +40,11 @@ export default function App() {
   };
 
   const handleAtomClick = () => {
+    // Only toggle listening, keep user on main screen to see the green listening atom
     toggleListening();
-    setIsChatOpen(true);
   };
 
   const handleSelectPrompt = (prompt: string) => {
-    setIsChatOpen(true);
     processQuery(prompt);
   };
 
@@ -122,13 +128,16 @@ export default function App() {
           <div className="mt-6 text-center">
             <p className="text-gray-400 text-xs sm:text-sm tracking-wide">
               {isListening ? (
-                <span className="text-red-400 font-medium animate-pulse">Escuchando... Di tu pregunta</span>
+                <span className="text-emerald-400 font-medium animate-pulse flex items-center justify-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  {liveTranscript ? `"${liveTranscript}"` : 'Escuchando... Habla ahora'}
+                </span>
               ) : isProcessing ? (
                 <span className="text-cyan-400 font-medium animate-pulse">Pensando respuesta...</span>
               ) : isSpeaking ? (
                 <span className="text-indigo-300 font-medium">Hablando respuesta...</span>
               ) : (
-                <span className="text-gray-400">Toca el átomo para hablar</span>
+                <span className="text-gray-400">Toca el micrófono en el centro para hablar</span>
               )}
             </p>
           </div>
