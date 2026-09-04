@@ -284,13 +284,28 @@ export function useVoiceAssistant() {
     };
   }, [speakResponse]);
 
-  // State ref for intervals
+  // State ref for intervals & latest transcripts
   const stateRef = useRef(state);
   stateRef.current = state;
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const knowledgeDocRef = useRef(knowledgeDoc);
+  knowledgeDocRef.current = knowledgeDoc;
+  const latestTranscriptRef = useRef<string>('');
+  const silenceTimeoutRef = useRef<any>(null);
+  const processQueryRef = useRef<(text: string) => Promise<void>>(async () => {});
 
   // Process a user query through backend Gemini API or local knowledge matcher
   const processQuery = useCallback(async (queryText: string) => {
-    if (!queryText.trim()) return;
+    const cleanQuery = queryText.trim();
+    if (!cleanQuery) return;
+
+    // Clear speech recognition
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
+    latestTranscriptRef.current = '';
 
     // Stop speaking if was active
     stopSpeaking();
@@ -299,7 +314,7 @@ export function useVoiceAssistant() {
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
-      text: queryText,
+      text: cleanQuery,
       timestamp: new Date(),
     };
     setMessages((prev) => [...prev, userMsg]);
@@ -314,9 +329,9 @@ export function useVoiceAssistant() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: queryText,
-          documentContext: knowledgeDoc.content,
-          history: messages.slice(-4).map((m) => ({
+          message: cleanQuery,
+          documentContext: knowledgeDocRef.current.content,
+          history: messagesRef.current.slice(-4).map((m) => ({
             role: m.role,
             text: m.text,
           })),
@@ -328,10 +343,10 @@ export function useVoiceAssistant() {
       }
 
       const data = await response.json();
-      assistantResponseText = data.reply || data.text || matchLocalKnowledge(queryText, knowledgeDoc.content);
+      assistantResponseText = data.reply || data.text || matchLocalKnowledge(cleanQuery, knowledgeDocRef.current.content);
     } catch (err) {
       console.warn('Using local knowledge matcher fallback:', err);
-      assistantResponseText = matchLocalKnowledge(queryText, knowledgeDoc.content);
+      assistantResponseText = matchLocalKnowledge(cleanQuery, knowledgeDocRef.current.content);
     }
 
     const assistantMsg: ChatMessage = {
@@ -343,23 +358,38 @@ export function useVoiceAssistant() {
 
     setMessages((prev) => [...prev, assistantMsg]);
     speakResponse(assistantResponseText);
-  }, [knowledgeDoc.content, messages, speakResponse, stopSpeaking]);
+  }, [speakResponse, stopSpeaking]);
+
+  processQueryRef.current = processQuery;
 
   // Toggle listening state
   const toggleListening = useCallback(() => {
-    if (state === 'speaking') {
+    if (stateRef.current === 'speaking') {
       stopSpeaking();
       return;
     }
 
-    if (isRecognizingRef.current || state === 'listening') {
-      // Stop recognition
+    if (isRecognizingRef.current || stateRef.current === 'listening') {
+      // Stop recognition and submit if we already captured speech
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+        silenceTimeoutRef.current = null;
+      }
+      
+      const textToSubmit = latestTranscriptRef.current.trim();
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
       }
       stopAudioCapture();
       isRecognizingRef.current = false;
-      setState('idle');
+      
+      if (textToSubmit) {
+        processQueryRef.current(textToSubmit);
+      } else {
+        setState('idle');
+      }
       return;
     }
 
@@ -371,6 +401,7 @@ export function useVoiceAssistant() {
 
     // Stop any ongoing speech
     stopSpeaking();
+    latestTranscriptRef.current = '';
 
     try {
       const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -387,6 +418,7 @@ export function useVoiceAssistant() {
         setState('listening');
         setErrorMessage(null);
         setLiveTranscript('');
+        latestTranscriptRef.current = '';
         startAudioCapture();
       };
 
@@ -402,27 +434,60 @@ export function useVoiceAssistant() {
           }
         }
 
-        const currentText = final || interim;
-        setLiveTranscript(currentText);
+        const currentText = (final || interim).trim();
+        if (currentText) {
+          latestTranscriptRef.current = currentText;
+          setLiveTranscript(currentText);
+
+          // Reset silence debounce timer (1.4s of quiet after speaking auto-submits)
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+          }
+          silenceTimeoutRef.current = setTimeout(() => {
+            if (isRecognizingRef.current && latestTranscriptRef.current.trim()) {
+              if (recognitionRef.current) {
+                try { recognitionRef.current.stop(); } catch (e) {}
+              }
+              isRecognizingRef.current = false;
+              stopAudioCapture();
+              processQueryRef.current(latestTranscriptRef.current.trim());
+            }
+          }, 1400);
+        }
 
         if (final && final.trim().length > 0) {
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+            silenceTimeoutRef.current = null;
+          }
           isRecognizingRef.current = false;
           stopAudioCapture();
-          processQuery(final.trim());
+          processQueryRef.current(final.trim());
         }
       };
 
       recognition.onerror = (event: any) => {
-        console.warn('Speech recognition error:', event.error);
-        isRecognizingRef.current = false;
-        stopAudioCapture();
+        console.warn('Speech recognition event:', event.error);
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
+
         if (event.error === 'not-allowed') {
+          isRecognizingRef.current = false;
+          stopAudioCapture();
           setErrorMessage('Permiso de micrófono denegado. Permite el acceso para hablar.');
           setState('error');
-        } else if (event.error !== 'no-speech') {
-          setErrorMessage(`Error: ${event.error}`);
-          setState('error');
+        } else if (event.error === 'no-speech') {
+          // If no speech was detected, gracefully return to idle
+          if (!latestTranscriptRef.current.trim()) {
+            isRecognizingRef.current = false;
+            stopAudioCapture();
+            setState('idle');
+          }
         } else {
+          isRecognizingRef.current = false;
+          stopAudioCapture();
           setState('idle');
         }
       };
@@ -430,16 +495,16 @@ export function useVoiceAssistant() {
       recognition.onend = () => {
         isRecognizingRef.current = false;
         stopAudioCapture();
-        if (stateRef.current === 'listening') {
-          // If ended with interim transcript, process it
-          setLiveTranscript((current) => {
-            if (current.trim()) {
-              processQuery(current.trim());
-            } else {
-              setState('idle');
-            }
-            return '';
-          });
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
+
+        const captured = latestTranscriptRef.current.trim();
+        if (stateRef.current === 'listening' && captured) {
+          processQueryRef.current(captured);
+        } else if (stateRef.current === 'listening') {
+          setState('idle');
         }
       };
 
@@ -450,7 +515,7 @@ export function useVoiceAssistant() {
       setState('error');
       stopAudioCapture();
     }
-  }, [isSpeechRecognitionSupported, processQuery, startAudioCapture, state, stopAudioCapture, stopSpeaking]);
+  }, [isSpeechRecognitionSupported, startAudioCapture, stopAudioCapture, stopSpeaking]);
 
   // Spacebar keyboard listener
   useEffect(() => {
